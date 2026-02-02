@@ -1,0 +1,13 @@
+# GLTCH Agent Dependencies
+
+# Core
+rich>=13.0.0
+psutil>=5.9.0
+prompt_toolkit>=3.0.0
+
+# Development (optional)
+# pytest>=7.0.0
+# pytest-cov>=4.0.0
+# black>=23.0.0
+# ruff>=0.1.0
+# mypy>=1.0.0

@@ -1,0 +1,49 @@
+{
+  "name": "gltch",
+  "version": "0.2.0",
+  "private": true,
+  "description": "GLTCH - Local-first, command-driven operator agent",
+  "workspaces": [
+    "gateway",
+    "cli",
+    "ui"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:agent\" \"npm run dev:gateway\"",
+    "dev:agent": "python gltch.py --rpc http",
+    "dev:gateway": "npm run dev -w gateway",
+    "dev:ui": "npm run dev -w ui",
+    "build": "npm run build -w gateway -w cli -w ui",
+    "build:gateway": "npm run build -w gateway",
+    "build:cli": "npm run build -w cli",
+    "build:ui": "npm run build -w ui",
+    "start": "npm run start -w gateway",
+    "lint": "npm run lint -w gateway -w cli",
+    "typecheck": "npm run typecheck -w gateway -w cli",
+    "test": "npm run test -w gateway -w cli -w ui",
+    "doctor": "node cli/dist/index.js doctor",
+    "clean": "rimraf gateway/dist cli/dist ui/dist"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "rimraf": "^5.0.5"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-org/glitch_agent.git"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "llm",
+    "local-first",
+    "discord",
+    "telegram",
+    "hacker",
+    "cyberpunk"
+  ],
+  "license": "MIT"
+}

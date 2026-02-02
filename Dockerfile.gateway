@@ -1,0 +1,38 @@
+# GLTCH Gateway Dockerfile
+# TypeScript gateway with channel integrations
+
+FROM node:20-alpine AS builder
+
+WORKDIR /app
+
+# Copy and build gateway
+COPY gateway/package*.json ./
+RUN npm ci
+
+COPY gateway/ ./
+RUN npm run build
+
+# Production image
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Copy built files
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/package*.json ./
+COPY --from=builder /app/node_modules ./node_modules
+
+# Environment
+ENV GLTCH_GATEWAY_HOST=0.0.0.0
+ENV GLTCH_GATEWAY_PORT=18888
+ENV GLTCH_GATEWAY_WS_PORT=18889
+
+# Expose ports
+EXPOSE 18888 18889
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:18888/health || exit 1
+
+# Run gateway
+CMD ["node", "dist/index.js", "start"]

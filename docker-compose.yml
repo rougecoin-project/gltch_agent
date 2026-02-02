@@ -1,0 +1,66 @@
+# GLTCH Docker Compose
+# Run the complete GLTCH stack
+
+version: '3.8'
+
+services:
+  # Python Agent
+  agent:
+    build:
+      context: .
+      dockerfile: Dockerfile.agent
+    container_name: gltch-agent
+    restart: unless-stopped
+    ports:
+      - "18890:18890"
+    volumes:
+      - gltch-data:/data/.gltch
+    environment:
+      - GLTCH_DATA_DIR=/data/.gltch
+      - GLTCH_LOCAL_URL=http://ollama:11434/api/chat
+    depends_on:
+      - ollama
+    networks:
+      - gltch-network
+
+  # TypeScript Gateway
+  gateway:
+    build:
+      context: .
+      dockerfile: Dockerfile.gateway
+    container_name: gltch-gateway
+    restart: unless-stopped
+    ports:
+      - "18888:18888"
+      - "18889:18889"
+    environment:
+      - GLTCH_GATEWAY_HOST=0.0.0.0
+      - GLTCH_GATEWAY_PORT=18888
+      - GLTCH_GATEWAY_WS_PORT=18889
+      - GLTCH_AGENT_URL=http://agent:18890
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+    depends_on:
+      - agent
+    networks:
+      - gltch-network
+
+  # Ollama (Local LLM)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: gltch-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    networks:
+      - gltch-network
+
+volumes:
+  gltch-data:
+  ollama-data:
+
+networks:
+  gltch-network:
+    driver: bridge

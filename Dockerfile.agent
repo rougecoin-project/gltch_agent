@@ -1,0 +1,26 @@
+# GLTCH Agent Dockerfile
+# Python-based agent with RPC server
+
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy agent source
+COPY agent/ ./agent/
+COPY gltch.py ./
+
+# Create data directory
+RUN mkdir -p /data/.gltch
+
+# Environment
+ENV GLTCH_DATA_DIR=/data/.gltch
+
+# Expose RPC port
+EXPOSE 18890
+
+# Run agent in RPC mode
+CMD ["python", "gltch.py", "--rpc", "http", "--port", "18890", "--host", "0.0.0.0"]

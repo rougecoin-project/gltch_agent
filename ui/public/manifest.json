@@ -1,0 +1,18 @@
+{
+  "name": "GLTCH",
+  "short_name": "GLTCH",
+  "description": "Your cyber operator 💜",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0a0a0a",
+  "theme_color": "#ff00ff",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

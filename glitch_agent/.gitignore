@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+.venv/
+.env
+memory.json
+.gltch_history
+*.bak
+user_memory.json
