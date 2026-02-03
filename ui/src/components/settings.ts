@@ -377,7 +377,7 @@ export class GltchSettings extends LitElement {
     mode: 'cyberpunk',
     mood: 'focused',
     localUrl: 'http://localhost:11434',
-    remoteUrl: 'http://100.92.52.78:1234'
+    remoteUrl: 'http://localhost:1234'
   };
 
   @state()

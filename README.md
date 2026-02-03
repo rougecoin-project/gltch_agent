@@ -229,7 +229,7 @@ GLTCH_LOCAL_URL=http://localhost:11434/api/chat
 GLTCH_LOCAL_MODEL=deepseek-r1:8b
 
 # Remote LM Studio (Boost Mode)
-GLTCH_REMOTE_URL=http://100.92.52.78:1234/v1/chat/completions
+GLTCH_REMOTE_URL=http://YOUR_LM_STUDIO_IP:1234/v1/chat/completions
 GLTCH_REMOTE_MODEL=deepseek-r1-distill-qwen-32b
 
 # OpenAI (Cloud Mode)

@@ -12,8 +12,8 @@ LOCAL_CTX = 4096
 LOCAL_BACKEND = "ollama"
 
 # Remote LLM (LM Studio / OpenAI Compatible)
-# Set your remote IP here (e.g. 192.168.1.188)
-REMOTE_URL = "http://192.168.1.188:1234/v1/chat/completions" 
+# Set your remote IP here (e.g. 192.168.1.100)
+REMOTE_URL = "http://localhost:1234/v1/chat/completions" 
 REMOTE_MODEL = "deepseek-r1-distill-qwen-14b"
 REMOTE_CTX = 8192
 REMOTE_BACKEND = "openai"

@@ -15,7 +15,7 @@ LOCAL_CTX = int(os.environ.get("GLTCH_LOCAL_CTX", "4096"))
 LOCAL_BACKEND = "ollama"
 
 # Remote LLM (LM Studio / OpenAI Compatible)
-REMOTE_URL = os.environ.get("GLTCH_REMOTE_URL", "http://100.72.91.35:1234/v1/chat/completions")
+REMOTE_URL = os.environ.get("GLTCH_REMOTE_URL", "http://localhost:1234/v1/chat/completions")
 REMOTE_MODEL = os.environ.get("GLTCH_REMOTE_MODEL", "deepseek-r1-distill-qwen-32b-uncensored")
 REMOTE_CTX = int(os.environ.get("GLTCH_REMOTE_CTX", "8192"))
 REMOTE_BACKEND = "openai"

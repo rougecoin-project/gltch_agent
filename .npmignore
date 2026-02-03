@@ -1,0 +1,60 @@
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# IDE
+.cursor/
+.vscode/
+.idea/
+
+# Git
+.git/
+.gitignore
+
+# Development files
+*.log
+*.tmp
+.env
+.env.*
+
+# Test files
+tests/
+test/
+*.test.js
+*.spec.js
+
+# Docs source (keep built docs)
+docs/
+
+# Source maps in dev
+*.map
+
+# Gateway source (keep dist)
+gateway/src/
+gateway/node_modules/
+gateway/tsconfig.json
+gateway/package-lock.json
+
+# UI source (keep dist)
+ui/src/
+ui/node_modules/
+ui/tsconfig.json
+ui/package-lock.json
+ui/vite.config.ts
+ui/index.html
+
+# Memory and state files
+memory.json
+wallet.json
+sessions/
+
+# Plans and transcripts
+*.plan.md
+agent-transcripts/

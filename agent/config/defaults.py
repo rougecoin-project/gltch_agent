@@ -23,7 +23,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "backend": "ollama"
         },
         "remote": {
-            "url": "http://192.168.1.188:1234/v1/chat/completions",
+            "url": "http://localhost:1234/v1/chat/completions",
             "model": "deepseek-r1-distill-qwen-14b",
             "context": 8192,
             "backend": "openai"

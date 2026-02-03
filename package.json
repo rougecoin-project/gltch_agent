@@ -1,6 +1,6 @@
 {
   "name": "gltch",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local-first AI agent with personality. Runs on your machine, thinks for herself.",
   "type": "module",
   "keywords": [
@@ -20,15 +20,14 @@
   "homepage": "https://github.com/cyberdreadx/gltch_agent",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cyberdreadx/gltch_agent.git"
+    "url": "git+https://github.com/cyberdreadx/gltch_agent.git"
   },
   "bin": {
-    "gltch": "./bin/gltch.js"
+    "gltch": "bin/gltch.js"
   },
   "files": [
     "bin/",
-    "agent/",
-    "gateway/dist/",
+    "agent/**/*.py",
     "ui/dist/",
     "requirements.txt",
     "gltch.py",
