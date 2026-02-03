@@ -1,54 +1,62 @@
 # GLTCH Documentation
 
-> "She's not a chatbot. She's a console with an attitude."
-
-Welcome to the GLTCH documentation. GLTCH is a local-first, command-driven operator agent that bridges messaging platforms to a personality-driven AI assistant.
+Welcome to the **GLTCH** documentation. GLTCH (Generative Language Transformer with Contextual Hierarchy) is a local-first, command-driven AI operator agent.
 
 ## Quick Links
 
-- [Getting Started](getting-started.md) - Get GLTCH running in 5 minutes
-- [Installation](install/index.md) - Detailed installation guide
-- [CLI Reference](cli/index.md) - Command-line toolkit
-- [Channels](channels/index.md) - Discord, Telegram, WebChat setup
-- [Concepts](concepts/index.md) - Architecture and design
+- [Getting Started](getting-started.md) — Install and run GLTCH
+- [Installation Guide](install/index.md) — Detailed setup instructions
+- [Architecture](concepts/architecture.md) — How GLTCH works
+- [CLI Reference](cli/index.md) — Command-line interface
+- [Channels](channels/index.md) — Discord, Telegram, WebChat integration
 
 ## What is GLTCH?
 
-GLTCH is a multi-component AI agent ecosystem:
+GLTCH is a **personality-driven AI assistant** that:
 
-- **Python Agent Core** - The brain with personality, memory, and tools
-- **TypeScript Gateway** - WebSocket hub connecting channels to the agent
-- **Multi-Channel Support** - Discord, Telegram, and browser-based WebChat
-- **CLI Toolkit** - Manage everything from the command line
-- **Web Dashboard** - Visual interface for chat and configuration
+- Runs **locally first** on Ollama — your data stays private
+- Supports **multiple LLM backends** — Ollama, LM Studio, OpenAI, Anthropic, Gemini
+- Connects to **multiple channels** — Terminal, Discord, Telegram, WebChat
+- Has a **cyberpunk personality** — She's not a chatbot, she's a console with attitude
+- Features **gamification** — XP, levels, ranks, and unlocks
 
-## Key Features
+## Core Components
 
-- **Local-First**: Runs on Ollama by default. No cloud required.
-- **Personality-Driven**: Modes (Operator, Cyberpunk, Loyal, Unhinged) and dynamic moods
-- **Gamification**: XP, levels, ranks, and feature unlocks
-- **Tool Execution**: File operations, shell commands, GIFs
-- **Emotional Engine**: Mood shifts based on system load and battery
+### Agent (Python)
 
-## Architecture
+The brain of GLTCH. Handles:
+- LLM communication and streaming
+- Tool execution (file ops, shell, web search)
+- Personality and mood management
+- Memory and state persistence
+- JSON-RPC API
 
-```
-Discord / Telegram / WebChat
-           │
-           ▼
-    ┌─────────────┐
-    │   Gateway   │  (TypeScript)
-    │  WebSocket  │
-    └──────┬──────┘
-           │ JSON-RPC
-           ▼
-    ┌─────────────┐
-    │    Agent    │  (Python)
-    │    Core     │
-    └─────────────┘
-```
+### Gateway (TypeScript)
+
+The communication hub. Handles:
+- WebSocket connections
+- Multi-channel message routing
+- REST API for the web dashboard
+- Session management
+
+### Web UI (Lit/Vite)
+
+The cyberpunk dashboard. Features:
+- Real-time chat interface
+- Settings management
+- API key configuration
+- Status monitoring
+- Network visualization
+
+## System Requirements
+
+- **Python** 3.10+
+- **Node.js** 18+
+- **Ollama** (for local LLM)
+- **8GB+ RAM** recommended
+- **GPU** optional but recommended for faster inference
 
 ## Support
 
-- GitHub Issues: Report bugs and request features
-- Discord: Join the community (coming soon)
+- GitHub: [github.com/cyberdreadx/gltch_agent](https://github.com/cyberdreadx/gltch_agent)
+- Twitter: [@cyberdreadx](https://x.com/cyberdreadx)

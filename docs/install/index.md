@@ -1,111 +1,278 @@
-# Installation
+# Installation Guide
 
-Detailed installation instructions for all components.
+Detailed installation instructions for GLTCH on various platforms.
 
-## Requirements
-
-| Component | Minimum Version |
-|-----------|----------------|
-| Node.js | 18.0.0 |
-| Python | 3.10 |
-| Ollama | Latest |
-
-## Installation Methods
-
-### From Source (Recommended)
-
-1. **Clone the repository**
+## Quick Install (All Platforms)
 
 ```bash
-git clone https://github.com/your-org/glitch_agent.git
-cd glitch_agent
-```
-
-2. **Install Python dependencies**
-
-```bash
+git clone https://github.com/cyberdreadx/gltch_agent.git
+cd gltch_agent
 pip install -r requirements.txt
 ```
 
-3. **Install Gateway dependencies**
+## Platform-Specific Instructions
 
-```bash
+### Windows
+
+#### Prerequisites
+
+1. **Python 3.10+**
+   - Download from [python.org](https://python.org)
+   - Check "Add to PATH" during installation
+
+2. **Node.js 18+**
+   - Download from [nodejs.org](https://nodejs.org)
+
+3. **Ollama**
+   - Download from [ollama.ai](https://ollama.ai)
+   - Run the installer
+
+#### Installation
+
+```powershell
+# Clone repository
+git clone https://github.com/cyberdreadx/gltch_agent.git
+cd gltch_agent
+
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install Node dependencies
 cd gateway
 npm install
-cd ..
-```
-
-4. **Install CLI dependencies**
-
-```bash
-cd cli
+cd ..\ui
 npm install
 cd ..
+
+# Pull a model
+ollama pull deepseek-r1:8b
+
+# Run GLTCH
+python gltch.py
 ```
 
-5. **Install UI dependencies (optional)**
+### macOS
+
+#### Prerequisites
 
 ```bash
-cd ui
-npm install
-cd ..
+# Install Homebrew if not present
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Install dependencies
+brew install python@3.11 node
+
+# Install Ollama
+brew install ollama
 ```
 
-### Using pip
+#### Installation
 
 ```bash
-pip install gltch
+# Clone repository
+git clone https://github.com/cyberdreadx/gltch_agent.git
+cd gltch_agent
+
+# Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install Node dependencies
+cd gateway && npm install && cd ..
+cd ui && npm install && cd ..
+
+# Start Ollama and pull model
+ollama serve &
+ollama pull deepseek-r1:8b
+
+# Run GLTCH
+python gltch.py
 ```
 
-### Using npm (CLI + Gateway)
+### Linux (Ubuntu/Debian)
+
+#### Prerequisites
 
 ```bash
-npm install -g @gltch/cli
+# Update packages
+sudo apt update
+
+# Install Python
+sudo apt install python3.11 python3.11-venv python3-pip
+
+# Install Node.js
+curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+sudo apt install nodejs
+
+# Install Ollama
+curl -fsSL https://ollama.ai/install.sh | sh
 ```
 
-## Configuration
-
-Copy the example environment file:
+#### Installation
 
 ```bash
-cp .env.example .env
+# Clone repository
+git clone https://github.com/cyberdreadx/gltch_agent.git
+cd gltch_agent
+
+# Create virtual environment
+python3.11 -m venv .venv
+source .venv/bin/activate
+
+# Install Python dependencies
+pip install -r requirements.txt
+
+# Install Node dependencies
+cd gateway && npm install && cd ..
+cd ui && npm install && cd ..
+
+# Start Ollama and pull model
+ollama serve &
+ollama pull deepseek-r1:8b
+
+# Run GLTCH
+python gltch.py
 ```
 
-Edit `.env` with your settings:
+### WSL (Windows Subsystem for Linux)
+
+#### Special Considerations
+
+WSL has its own network stack. To connect to Ollama on Windows:
+
+1. **Configure Ollama on Windows:**
+   ```powershell
+   $env:OLLAMA_HOST="0.0.0.0"
+   ollama serve
+   ```
+
+2. **Add Firewall Rule (Admin PowerShell):**
+   ```powershell
+   New-NetFirewallRule -DisplayName "Ollama WSL" -Direction Inbound -LocalPort 11434 -Protocol TCP -Action Allow
+   ```
+
+3. **Configure GLTCH in WSL:**
+   ```bash
+   # Get Windows host IP
+   WIN_IP=$(cat /etc/resolv.conf | grep nameserver | awk '{print $2}')
+   export GLTCH_LOCAL_URL=http://$WIN_IP:11434/api/chat
+   ```
+
+4. **Or run Ollama inside WSL:**
+   ```bash
+   curl -fsSL https://ollama.ai/install.sh | sh
+   ollama serve
+   ```
+
+## Docker (Coming Soon)
 
 ```bash
-# LLM Settings
-GLTCH_LOCAL_MODEL=phi3:3.8b
-
-# Channel Tokens (optional)
-DISCORD_BOT_TOKEN=your-token
-TELEGRAM_BOT_TOKEN=your-token
-
-# Giphy (optional, for GIF support)
-GIPHY_API_KEY=your-key
+docker-compose up -d
 ```
 
 ## Verifying Installation
 
-Run the doctor command:
+### Check Python
 
 ```bash
-gltch doctor
+python --version
+# Should show Python 3.10+
 ```
 
-This checks all dependencies and configuration.
-
-## Updating
+### Check Node
 
 ```bash
-# From source
+node --version
+# Should show v18+
+```
+
+### Check Ollama
+
+```bash
+ollama list
+# Should show available models
+```
+
+### Check GLTCH
+
+```bash
+python gltch.py --help
+# Should show usage information
+```
+
+## Troubleshooting
+
+### "python: command not found"
+
+- Windows: Reinstall Python with "Add to PATH" checked
+- macOS/Linux: Use `python3` instead of `python`
+
+### "pip: command not found"
+
+```bash
+# Install pip
+python -m ensurepip --upgrade
+```
+
+### "No module named 'venv'"
+
+```bash
+# Ubuntu/Debian
+sudo apt install python3.11-venv
+```
+
+### "npm: command not found"
+
+Reinstall Node.js from [nodejs.org](https://nodejs.org)
+
+### Ollama Connection Refused
+
+```bash
+# Make sure Ollama is running
+ollama serve
+
+# Check if it's listening
+curl http://localhost:11434/api/tags
+```
+
+### Permission Denied
+
+```bash
+# If you get permission errors
+sudo chown -R $USER:$USER .
+```
+
+## Updating GLTCH
+
+```bash
+cd gltch_agent
 git pull
-pip install -r requirements.txt
-cd gateway && npm install && cd ..
 
-# From pip
-pip install --upgrade gltch
+# Update Python dependencies
+pip install -r requirements.txt --upgrade
 
-# From npm
-npm update -g @gltch/cli
+# Update Node dependencies
+cd gateway && npm update && cd ..
+cd ui && npm update && cd ..
+```
+
+## Uninstalling
+
+```bash
+# Remove GLTCH
+rm -rf gltch_agent
+
+# Remove virtual environment (if outside project)
+rm -rf ~/.gltch-venv
+
+# Optionally remove Ollama
+# macOS: brew uninstall ollama
+# Linux: sudo rm /usr/local/bin/ollama
 ```

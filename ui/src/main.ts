@@ -1,9 +1,6 @@
 /**
- * GLTCH Dashboard - Main Entry
+ * GLTCH Dashboard - Main Entry Point
  */
 
 import './styles/global.css';
 import './components/app.js';
-import './components/chat.js';
-import './components/status.js';
-import './components/settings.js';

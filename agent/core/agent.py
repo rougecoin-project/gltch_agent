@@ -7,7 +7,7 @@ from typing import Dict, Any, Optional, Generator
 import time
 
 from agent.memory.store import load_memory, save_memory, now_iso
-from agent.core.llm import stream_llm, get_last_stats
+from agent.core.llm import stream_llm, get_last_stats, set_api_keys
 from agent.tools.actions import parse_and_execute_actions, strip_thinking
 from agent.personality.emotions import get_emotion_metrics, get_environmental_context
 from agent.gamification.xp import add_xp, get_progress_bar, get_rank_title
@@ -27,6 +27,10 @@ class GltchAgent:
         self.memory = memory or load_memory()
         self._last_response: Optional[str] = None
         self._last_stats: Dict[str, Any] = {}
+        # Load API keys into LLM module
+        api_keys = self.memory.get("api_keys", {})
+        if api_keys:
+            set_api_keys(api_keys)
     
     @property
     def operator(self) -> Optional[str]:

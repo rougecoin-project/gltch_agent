@@ -1,139 +1,241 @@
 # Architecture
 
-How GLTCH components fit together.
+GLTCH is a hybrid Python/TypeScript system designed for flexibility and extensibility.
 
 ## System Overview
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      User Interfaces                     │
-├─────────────┬────────────────┬─────────────────────────┤
-│   Discord   │    Telegram    │    WebChat / CLI        │
-└──────┬──────┴───────┬────────┴──────────┬──────────────┘
-       │              │                    │
-       └──────────────┼────────────────────┘
-                      │
-              ┌───────▼───────┐
-              │    Gateway    │  TypeScript
-              │  Port: 18888  │  HTTP + WebSocket
-              │  Port: 18889  │
-              └───────┬───────┘
-                      │
-                      │  JSON-RPC
-                      │
-              ┌───────▼───────┐
-              │     Agent     │  Python
-              │  Port: 18890  │
-              └───────────────┘
-                      │
-              ┌───────▼───────┐
-              │     Ollama    │
-              │  Port: 11434  │
-              └───────────────┘
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          GLTCH ECOSYSTEM                                 │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐     │
+│  │   Discord   │  │  Telegram   │  │   WebChat   │  │    iOS      │     │
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘     │
+│         │                │                │                │            │
+│         └────────────────┴────────────────┴────────────────┘            │
+│                                   │                                      │
+│                                   ▼                                      │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                         GATEWAY                                    │  │
+│  │                    TypeScript / Express                            │  │
+│  │                                                                    │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐    │  │
+│  │  │  HTTP API   │  │  WebSocket  │  │   Channel Adapters      │    │  │
+│  │  │  REST/JSON  │  │  Real-time  │  │  Discord/Telegram/Web   │    │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘    │  │
+│  │                                                                    │  │
+│  │  Port: 18888                                                       │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                   │                                      │
+│                                   ▼                                      │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                          AGENT                                     │  │
+│  │                       Python / asyncio                             │  │
+│  │                                                                    │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐    │  │
+│  │  │  JSON-RPC   │  │    Core     │  │        Tools            │    │  │
+│  │  │   Server    │  │   Logic     │  │  File/Shell/Network     │    │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘    │  │
+│  │                                                                    │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐    │  │
+│  │  │  Memory     │  │ Personality │  │     Gamification        │    │  │
+│  │  │  Store      │  │   Engine    │  │    XP / Levels          │    │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘    │  │
+│  │                                                                    │  │
+│  │  Port: 18890                                                       │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                   │                                      │
+│                                   ▼                                      │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │                       LLM BACKENDS                                 │  │
+│  │                                                                    │  │
+│  │  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐    │  │
+│  │  │   Ollama    │  │  LM Studio  │  │   Cloud Providers       │    │  │
+│  │  │   (Local)   │  │  (Remote)   │  │  OpenAI/Anthropic/etc   │    │  │
+│  │  │  :11434     │  │   :1234     │  │                         │    │  │
+│  │  └─────────────┘  └─────────────┘  └─────────────────────────┘    │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
 ```
 
 ## Components
 
 ### Agent (Python)
 
-The brain of GLTCH. Handles:
-- LLM inference (via Ollama or remote)
-- Memory persistence
-- Tool execution
-- Personality and emotions
-- Gamification
+The core intelligence of GLTCH. Responsible for:
 
-Location: `agent/`
+#### Core Module (`agent/core/`)
+- **agent.py** — Main `GltchAgent` class, orchestrates all systems
+- **llm.py** — LLM interface with streaming, multi-backend support, fallbacks
+
+#### Memory Module (`agent/memory/`)
+- **store.py** — JSON-based persistent storage
+- **sessions.py** — Multi-user session management
+
+#### Tools Module (`agent/tools/`)
+- **actions.py** — Action parser and executor (file, shell, network, gif)
+- **opencode.py** — OpenCode AI coding integration
+
+#### Personality Module (`agent/personality/`)
+- **emotions.py** — Mood management, environmental awareness
+
+#### Gamification Module (`agent/gamification/`)
+- **xp.py** — XP system, levels, ranks, unlocks
+
+#### RPC Module (`agent/rpc/`)
+- **server.py** — JSON-RPC 2.0 server (HTTP and stdio modes)
 
 ### Gateway (TypeScript)
 
-The communication hub. Handles:
-- Channel connections (Discord, Telegram, WebChat)
-- WebSocket connections
-- Message routing
-- Session management
-- REST API
+The communication hub. Responsible for:
 
-Location: `gateway/`
+- **HTTP API** — REST endpoints for web dashboard
+- **WebSocket** — Real-time bidirectional communication
+- **Agent Bridge** — Proxies requests to Python agent via RPC
+- **Session Management** — Tracks connected clients
 
-### CLI (TypeScript)
+### Web UI (Lit/Vite)
 
-Management toolkit. Handles:
-- Gateway control (start/stop)
-- Channel configuration
-- System diagnostics
-- Interactive setup
+The user interface. Components:
 
-Location: `cli/`
-
-### UI (TypeScript/Lit)
-
-Web dashboard. Provides:
-- Chat interface
-- Status monitoring
-- Settings management
-
-Location: `ui/`
-
-## Communication
-
-### Gateway ↔ Agent
-
-JSON-RPC 2.0 over HTTP:
-
-```json
-// Request
-{
-  "jsonrpc": "2.0",
-  "method": "chat",
-  "params": {
-    "message": "hello",
-    "session_id": "discord:123"
-  },
-  "id": 1
-}
-
-// Response
-{
-  "jsonrpc": "2.0",
-  "result": {
-    "response": "Hey there!",
-    "mood": "focused"
-  },
-  "id": 1
-}
-```
-
-### Client ↔ Gateway
-
-WebSocket with JSON messages:
-
-```json
-// Client sends
-{"type": "chat", "text": "hello"}
-
-// Server responds
-{"type": "response", "response": "Hey!"}
-{"type": "typing", "typing": false}
-```
+- **app.ts** — Main application shell
+- **sidebar.ts** — Navigation
+- **header.ts** — Stats display
+- **chat.ts** — Chat interface
+- **settings.ts** — Configuration panel
+- **status.ts** — Network visualization
+- **ticker.ts** — Activity feed
 
 ## Data Flow
 
-1. User sends message via channel (Discord/Telegram/WebChat)
-2. Gateway receives and identifies session
-3. Gateway routes to agent via JSON-RPC
-4. Agent processes with LLM and tools
-5. Agent returns response
-6. Gateway formats for channel
-7. User receives response
+### Chat Message Flow
 
-## Sessions
+```
+User Input (Terminal/Discord/Telegram/Web)
+    │
+    ▼
+Gateway (if not terminal)
+    │ HTTP POST /api/chat
+    ▼
+Agent RPC Server
+    │ JSON-RPC "chat"
+    ▼
+GltchAgent.chat()
+    │
+    ├─► Build System Prompt (mode, mood, operator)
+    │
+    ├─► Prepare Messages (history + new message)
+    │
+    ▼
+LLM Backend (stream_llm)
+    │ Streaming response
+    ▼
+Parse Actions ([ACTION:...])
+    │
+    ├─► Execute Tools (file, shell, etc.)
+    │
+    ▼
+Response + Action Results
+    │
+    ▼
+Update Memory (history, XP, mood changes)
+    │
+    ▼
+Return to User
+```
 
-Each channel+user combination gets a session:
-- `discord:guild:channel` - Discord server channel
-- `discord:dm:user` - Discord DM
-- `telegram:group:id` - Telegram group
-- `telegram:dm:user` - Telegram DM
-- `webchat:client-id` - Browser session
+### Settings Flow
 
-Sessions maintain chat history and context.
+```
+Web UI Settings Panel
+    │
+    ▼
+HTTP POST /api/settings
+    │
+    ▼
+Gateway
+    │ JSON-RPC "set_settings"
+    ▼
+Agent RPC Server
+    │
+    ▼
+Update Memory
+    │
+    ▼
+Save to disk (memory.json)
+```
+
+## LLM Backend Selection
+
+GLTCH supports multiple LLM backends with automatic fallback:
+
+```
+┌─────────────────────────────────────────────────────┐
+│              Backend Selection Logic                 │
+├─────────────────────────────────────────────────────┤
+│                                                      │
+│  if openai_mode AND has_openai_key:                 │
+│      use OpenAI Cloud                               │
+│  elif boost_mode:                                    │
+│      try Remote LM Studio                           │
+│      fallback to Local Ollama                       │
+│  else:                                              │
+│      use Local Ollama                               │
+│                                                      │
+└─────────────────────────────────────────────────────┘
+```
+
+## Memory Structure
+
+All state is persisted in `memory.json`:
+
+```json
+{
+  "created": "2024-01-01T00:00:00",
+  "operator": "dreadx",
+  "mode": "cyberpunk",
+  "mood": "focused",
+  "boost": false,
+  "openai_mode": false,
+  "network_active": false,
+  "xp": 1250,
+  "level": 3,
+  "chat_history": [...],
+  "notes": [...],
+  "missions": [...],
+  "api_keys": {
+    "openai": "sk-...",
+    "anthropic": "sk-ant-..."
+  }
+}
+```
+
+## Security Considerations
+
+- **Local-First**: By default, all data stays on your machine
+- **API Keys**: Stored encrypted in memory.json, never transmitted
+- **No Telemetry**: GLTCH doesn't phone home
+- **Network Tools**: Disabled by default, require explicit `/net on`
+- **RPC**: By default, only listens on localhost
+
+## Extensibility
+
+### Adding New Tools
+
+1. Create function in `agent/tools/actions.py`
+2. Register in `ACTION_HANDLERS` dict
+3. Add documentation to system prompt
+
+### Adding New LLM Providers
+
+1. Update `agent/core/llm.py` with new backend logic
+2. Add configuration to `agent/config/settings.py`
+3. Update API key handling in `agent/rpc/server.py`
+
+### Adding New Channels
+
+1. Create adapter in `gateway/src/channels/`
+2. Register in gateway startup
+3. Handle message routing

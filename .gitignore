@@ -54,6 +54,7 @@ dist/
 # GLTCH Data
 memory.json
 memory_backup_*.json
+wallet.json
 sessions/
 kb/
 workspace/

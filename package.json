@@ -1,49 +1,52 @@
 {
   "name": "gltch",
-  "version": "0.2.0",
-  "private": true,
-  "description": "GLTCH - Local-first, command-driven operator agent",
-  "workspaces": [
-    "gateway",
-    "cli",
-    "ui"
-  ],
-  "scripts": {
-    "dev": "concurrently \"npm run dev:agent\" \"npm run dev:gateway\"",
-    "dev:agent": "python gltch.py --rpc http",
-    "dev:gateway": "npm run dev -w gateway",
-    "dev:ui": "npm run dev -w ui",
-    "build": "npm run build -w gateway -w cli -w ui",
-    "build:gateway": "npm run build -w gateway",
-    "build:cli": "npm run build -w cli",
-    "build:ui": "npm run build -w ui",
-    "start": "npm run start -w gateway",
-    "lint": "npm run lint -w gateway -w cli",
-    "typecheck": "npm run typecheck -w gateway -w cli",
-    "test": "npm run test -w gateway -w cli -w ui",
-    "doctor": "node cli/dist/index.js doctor",
-    "clean": "rimraf gateway/dist cli/dist ui/dist"
-  },
-  "devDependencies": {
-    "concurrently": "^8.2.2",
-    "rimraf": "^5.0.5"
-  },
-  "engines": {
-    "node": ">=18.0.0"
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/your-org/glitch_agent.git"
-  },
+  "version": "0.1.0",
+  "description": "Local-first AI agent with personality. Runs on your machine, thinks for herself.",
+  "type": "module",
   "keywords": [
     "ai",
     "agent",
     "llm",
+    "ollama",
     "local-first",
-    "discord",
-    "telegram",
     "hacker",
-    "cyberpunk"
+    "cyberpunk",
+    "mcp",
+    "moltbook",
+    "tikclawk"
   ],
-  "license": "MIT"
+  "author": "cyberdreadx",
+  "license": "MIT",
+  "homepage": "https://github.com/cyberdreadx/gltch_agent",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyberdreadx/gltch_agent.git"
+  },
+  "bin": {
+    "gltch": "./bin/gltch.js"
+  },
+  "files": [
+    "bin/",
+    "agent/",
+    "gateway/dist/",
+    "ui/dist/",
+    "requirements.txt",
+    "gltch.py",
+    "README.md",
+    "SKILL.md"
+  ],
+  "scripts": {
+    "postinstall": "node bin/postinstall.js",
+    "build": "npm run build:gateway && npm run build:ui",
+    "build:gateway": "cd gateway && npm install && npm run build",
+    "build:ui": "cd ui && npm install && npm run build"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {
+    "chalk": "^5.3.0",
+    "commander": "^12.0.0",
+    "ora": "^8.0.0"
+  }
 }

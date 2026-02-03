@@ -1,112 +1,176 @@
 # WebChat
 
-Browser-based chat interface, built into the gateway.
+The built-in web interface for chatting with GLTCH from any browser.
 
-## Overview
+## Quick Start
 
-WebChat is the easiest way to interact with GLTCH - no additional setup required. Just start the gateway and open your browser.
+1. Start the full stack:
+   ```bash
+   # Terminal 1: Agent
+   python gltch.py --rpc http
 
-## Usage
+   # Terminal 2: Gateway
+   cd gateway && npm run dev
 
-### 1. Start the Gateway
+   # Terminal 3: UI
+   cd ui && npm run dev
+   ```
 
-```bash
-gltch gateway start
-```
+2. Open http://localhost:3000
 
-### 2. Open the Dashboard
+## Features
 
-Navigate to: http://localhost:18888
+### Chat Interface
+- Real-time streaming responses
+- Markdown rendering
+- Code syntax highlighting
+- Typing indicators
 
-The dashboard includes:
-- **Chat**: Real-time conversation with GLTCH
-- **Status**: System and agent status
-- **Settings**: Configure mode, mood, and options
+### Settings Panel
+- Toggle boost mode (remote GPU)
+- Toggle OpenAI mode (cloud)
+- Change personality mode
+- Change mood
+- Manage API keys
 
-## WebSocket Connection
+### Status View
+- Network visualization
+- Connected services status
+- Agent statistics (level, XP, rank)
 
-For custom integrations, connect directly via WebSocket:
+### Mobile Support
+- Responsive design
+- PWA support (Add to Home Screen)
+- Touch-optimized controls
 
-```javascript
-const ws = new WebSocket('ws://localhost:18889?channel=webchat');
+## Mobile Access
 
-ws.onopen = () => {
-  console.log('Connected to GLTCH');
-};
+### Local Network
 
-ws.onmessage = (event) => {
-  const data = JSON.parse(event.data);
-  console.log('Received:', data);
-};
+Access from any device on your network:
 
-// Send a message
-ws.send(JSON.stringify({
-  type: 'chat',
-  text: 'Hello GLTCH!'
-}));
-```
+1. Start gateway with host binding:
+   ```bash
+   cd gateway
+   npm run dev -- --host 0.0.0.0
+   ```
 
-## Message Format
+2. Find your machine's IP:
+   ```bash
+   # Linux/macOS
+   ip addr | grep inet
+   
+   # Windows
+   ipconfig
+   ```
 
-### Sending
+3. Open `http://<your-ip>:3000` on your phone
 
-```json
-{
-  "type": "chat",
-  "text": "Your message here"
-}
-```
+### Tailscale (Recommended)
 
-### Receiving
+For secure remote access:
 
-```json
-{
-  "type": "response",
-  "response": "Agent response",
-  "mood": "focused",
-  "xp_gained": 5
-}
-```
+1. Install Tailscale on your server and phone
+2. Run `tailscale up` on both
+3. Access via Tailscale IP: `http://100.x.x.x:3000`
 
-### Typing Indicator
+### iOS PWA
 
-```json
-{
-  "type": "typing",
-  "typing": true
-}
-```
+For app-like experience on iOS:
+
+1. Open the web UI in Safari
+2. Tap the Share button
+3. Select "Add to Home Screen"
+4. Name it "GLTCH"
+5. Tap Add
+
+The icon will appear on your home screen and open in full-screen mode.
 
 ## Configuration
 
-WebChat is enabled by default. To disable:
+### UI Port
 
-```json
-{
-  "channels": {
-    "webchat": {
-      "enabled": false
+```bash
+# Default port is 3000
+cd ui
+PORT=8080 npm run dev
+```
+
+### API Proxy
+
+The UI proxies API calls to the gateway. Configure in `ui/vite.config.ts`:
+
+```typescript
+export default defineConfig({
+  server: {
+    port: 3000,
+    proxy: {
+      '/api': 'http://localhost:18888',
+      '/health': 'http://localhost:18888'
     }
   }
-}
+});
 ```
 
 ## Customization
 
-The dashboard UI is built with Lit and can be customized:
+### Theme
 
-1. Edit files in `ui/src/components/`
-2. Rebuild: `cd ui && npm run build`
-3. The gateway serves the built files
+The UI uses CSS variables for theming. Edit `ui/src/styles/global.css`:
 
-## Remote Access
-
-By default, the gateway binds to `127.0.0.1` (localhost only).
-
-For remote access:
-
-```bash
-gltch gateway start --host 0.0.0.0
+```css
+:root {
+  --bg-primary: #0a0a0a;
+  --neon-green: #00ff66;
+  --neon-red: #ff3366;
+  --neon-magenta: #ff00ff;
+  /* ... */
+}
 ```
 
-**Warning**: This exposes the gateway to your network. Use with caution.
+### Components
+
+All UI components are in `ui/src/components/`:
+
+- `app.ts` — Main layout
+- `sidebar.ts` — Navigation
+- `header.ts` — Status bar
+- `chat.ts` — Chat interface
+- `settings.ts` — Settings panel
+- `status.ts` — Network view
+- `ticker.ts` — Activity feed
+
+## Building for Production
+
+```bash
+cd ui
+npm run build
+```
+
+Output will be in `ui/dist/`. Serve with any static file server:
+
+```bash
+npx serve dist
+```
+
+Or integrate with the gateway to serve the UI directly.
+
+## Troubleshooting
+
+### Blank Page
+
+1. Check browser console for errors
+2. Verify gateway is running
+3. Check network tab for failed API calls
+
+### API Errors
+
+1. Ensure agent is running in RPC mode
+2. Check gateway logs
+3. Verify proxy configuration in vite.config.ts
+
+### Slow Responses
+
+1. Check LLM model performance
+2. Consider using boost mode for faster inference
+3. Check network latency if using remote LLM

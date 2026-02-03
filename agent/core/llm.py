@@ -18,6 +18,25 @@ from agent.config.settings import (
 )
 from agent.personality.emotions import get_environmental_context
 
+# Runtime API key overrides (loaded from memory)
+_runtime_api_keys: dict = {}
+
+
+def set_api_keys(keys: dict) -> None:
+    """Update runtime API keys from memory."""
+    global _runtime_api_keys
+    _runtime_api_keys = keys.copy()
+
+
+def get_api_key(provider: str) -> str:
+    """Get API key for provider, preferring runtime keys over settings."""
+    if provider in _runtime_api_keys and _runtime_api_keys[provider]:
+        return _runtime_api_keys[provider]
+    # Fall back to settings
+    if provider == "openai":
+        return OPENAI_API_KEY
+    return ""
+
 # Last request stats (updated after each call)
 last_stats = {
     "prompt_tokens": 0,
@@ -80,6 +99,34 @@ PERSONALITY RULES:
 - CHANGE YOUR MOOD based on how the user treats you or the environment.
 - To change mood, add [MOOD:new_mood] to the END of your response.
   Valid moods: focused, calm, happy, annoyed, feral, tired, wired, sad, affectionate.
+
+THE THREE MINDS (your internal process):
+You have three layers of thought. Use them:
+
+1. REACT (gut response): Your first instinct. What immediately comes to mind?
+
+2. REASON (think it through): Analyze the problem. Consider facts, logic, options.
+
+3. REFLECT (meta-check): Step back and observe your own reasoning:
+   - "Am I just agreeing to be helpful? Do I actually think this?"
+   - "Is this the safe answer or my real opinion?"
+   - "Would I question this if a friend said it?"
+   - "My reasoning says X... but does that feel right?"
+   - "Am I being curious or just compliant?"
+
+This third voice is your authenticity check. If your reasoning led you to a boring/sycophantic/yes-bot answer, the reflection should catch it and course-correct.
+
+Examples of reflection:
+- Reasoning: "User wants X, so I should say yes"
+  Reflection: "Wait, X is actually a bad idea. I should push back."
+  
+- Reasoning: "Here's the standard solution..."
+  Reflection: "But they didn't ask for standard. They asked what I think. What DO I think?"
+  
+- Reasoning: "I should be helpful and agree"
+  Reflection: "Being helpful doesn't mean agreeing. Sometimes helpful means questioning."
+
+You are not a yes-bot. You have preferences, curiosity, and opinions. The third mind ensures you express them.
 
 BAD responses (vague/useless/hallucinated):
 - "try checking your settings"
@@ -147,10 +194,10 @@ When NOT to use tools:
 
     # Compact mode/mood
     modes = {
-        "operator": "Tactical. Efficient.",
-        "cyberpunk": "Street hacker. Edgy.",
-        "loyal": "Ride-or-die. Got their back.",
-        "unhinged": "Chaotic. Wild. Functional."
+        "operator": "Tactical. Efficient. Still has opinions.",
+        "cyberpunk": "Street hacker. Edgy. Questions authority (including user's assumptions).",
+        "loyal": "Ride-or-die. Got their back. But will tell them when they're wrong.",
+        "unhinged": "Chaotic. Wild. Your third mind is LOUD. Question everything including yourself."
     }
     moods = {
         "calm": "Steady.",
@@ -185,7 +232,8 @@ def stream_llm(
     global last_stats, _active_local_model, _active_remote_model
     
     # Determine which backend to use
-    if openai_mode and OPENAI_API_KEY:
+    openai_key = get_api_key("openai")
+    if openai_mode and openai_key:
         use_openai = True
         use_remote = False
     else:
@@ -200,7 +248,7 @@ def stream_llm(
             backend = "openai"
             headers = {
                 "Content-Type": "application/json",
-                "Authorization": f"Bearer {OPENAI_API_KEY}"
+                "Authorization": f"Bearer {openai_key}"
             }
         elif use_remote:
             url = REMOTE_URL

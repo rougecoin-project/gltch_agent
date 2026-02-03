@@ -43,7 +43,7 @@ def main():
         return
     
     if args.rpc:
-        # Run in RPC mode
+        # Run in RPC mode only (no terminal UI)
         from agent.rpc.server import RPCServer
         server = RPCServer()
         
@@ -52,13 +52,14 @@ def main():
         else:
             server.run_http(args.host, args.port)
     else:
-        # Run in terminal UI mode
-        run_terminal_ui()
+        # Run terminal UI with RPC server in background
+        run_terminal_ui(rpc_port=args.port, rpc_host=args.host)
 
 
-def run_terminal_ui():
-    """Run the interactive terminal UI."""
+def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
+    """Run the interactive terminal UI with background RPC server."""
     import time
+    import threading
     from rich.console import Console
     from rich.prompt import Prompt
     from rich.live import Live
@@ -73,75 +74,41 @@ def run_terminal_ui():
     from agent.core.llm import get_last_stats, list_models, set_model, test_connection
     from agent.memory.store import load_memory, save_memory, backup_memory, restore_memory
     from agent.memory.knowledge import KnowledgeBase
-    from agent.tools.actions import strip_thinking, verify_suggestions
+    from agent.memory.sessions import SessionManager
+    from agent.tools.actions import strip_thinking, extract_thinking, verify_suggestions
     from agent.personality.emotions import get_emotion_metrics
     from agent.personality.moods import MOOD_UI
     from agent.gamification.xp import get_progress_bar
     from agent.gamification.ranks import get_rank_title
+    from agent.rpc.server import RPCServer
     
     console = Console()
     AGENT_NAME = "GLTCH"
     
     # Cyber girl ASCII art frames for animation
-    GLTCH_FRAMES = [
-        """[bright_magenta]
-    ▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄▄
-    █                                                 █
-    █   ██████╗ ██╗  ████████╗ ██████╗██╗  ██╗       █
-    █  ██╔════╝ ██║  ╚══██╔══╝██╔════╝██║  ██║       █
-    █  ██║  ███╗██║     ██║   ██║     ███████║       █
-    █  ██║   ██║██║     ██║   ██║     ██╔══██║       █
-    █  ╚██████╔╝███████╗██║   ╚██████╗██║  ██║       █
-    █   ╚═════╝ ╚══════╝╚═╝    ╚═════╝╚═╝  ╚═╝       █
-    █                                                 █
-    ▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀▀[/bright_magenta]""",
-        """[cyan]
-    ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░
-    █                                                 █
-    █   ██████╗ ██╗  ████████╗ ██████╗██╗  ██╗       █
-    █  ██╔════╝ ██║  ╚══██╔══╝██╔════╝██║  ██║       █
-    █  ██║  ███╗██║     ██║   ██║     ███████║       █
-    █  ██║   ██║██║     ██║   ██║     ██╔══██║       █
-    █  ╚██████╔╝███████╗██║   ╚██████╗██║  ██║       █
-    █   ╚═════╝ ╚══════╝╚═╝    ╚═════╝╚═╝  ╚═╝       █
-    █                                                 █
-    ░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░░▒▓█▓▒░[/cyan]""",
-        """[bright_green]
-    ╔═══════════════════════════════════════════════════╗
-    ║                                                   ║
-    ║   ██████╗ ██╗  ████████╗ ██████╗██╗  ██╗  ✧･ﾟ    ║
-    ║  ██╔════╝ ██║  ╚══██╔══╝██╔════╝██║  ██║ :*✧    ║
-    ║  ██║  ███╗██║     ██║   ██║     ███████║         ║
-    ║  ██║   ██║██║     ██║   ██║     ██╔══██║  ⚡     ║
-    ║  ╚██████╔╝███████╗██║   ╚██████╗██║  ██║         ║
-    ║   ╚═════╝ ╚══════╝╚═╝    ╚═════╝╚═╝  ╚═╝  💜     ║
-    ║                                                   ║
-    ╚═══════════════════════════════════════════════════╝[/bright_green]"""
-    ]
+    GLTCH_BANNER = """[bright_magenta]
+ ██████╗ ██╗  ████████╗ ██████╗██╗  ██╗
+██╔════╝ ██║  ╚══██╔══╝██╔════╝██║  ██║
+██║  ███╗██║     ██║   ██║     ███████║
+██║   ██║██║     ██║   ██║     ██╔══██║
+╚██████╔╝███████╗██║   ╚██████╗██║  ██║
+ ╚═════╝ ╚══════╝╚═╝    ╚═════╝╚═╝  ╚═╝[/bright_magenta]
+[dim]Generative Language Transformer with Contextual Hierarchy[/dim]
+[dim]@cyberdreadx[/dim]"""
     
     TAGLINES = [
-        "✨ [italic cyan]cyber operator online[/italic cyan] ✨",
-        "💜 [italic magenta]glitching reality since boot[/italic magenta] 💜",
-        "⚡ [italic green]local-first • privacy-native • unhinged[/italic green] ⚡",
-        "🔮 [italic cyan]your chaos gremlin is ready[/italic cyan] 🔮",
-        "💀 [italic red]hack the planet, cuddle the chaos[/italic red] 💀",
+        "[italic cyan]local-first • privacy-native • unhinged[/italic cyan]",
+        "[italic magenta]three minds • one agent[/italic magenta]",
+        "[italic green]your chaos gremlin is ready[/italic green]",
+        "[italic cyan]opinions included, no extra charge[/italic cyan]",
     ]
     
     def animate_intro():
-        """Play animated intro sequence."""
+        """Display clean intro banner."""
         import random
-        
-        # Glitch effect - flash through frames
-        for _ in range(3):
-            for frame in GLTCH_FRAMES:
-                console.clear()
-                console.print(frame)
-                time.sleep(0.08)
-        
-        # Final frame with tagline
         console.clear()
-        console.print(GLTCH_FRAMES[-1])
-        console.print(f"\n          {random.choice(TAGLINES)}\n")
+        console.print(GLTCH_BANNER)
+        console.print(f"\n{random.choice(TAGLINES)}\n")
     
     # Command autocomplete (alphabetically sorted)
     COMMANDS = sorted([
@@ -154,11 +121,18 @@ def run_terminal_ui():
         "/load ",
         "/mode cyberpunk", "/mode loyal", "/mode operator", "/mode unhinged",
         "/model",
+        "/molt", "/molt register ", "/molt post ", "/molt feed", "/molt profile",
+        "/molt search ", "/molt comment ", "/molt upvote ", "/molt heartbeat",
         "/mood affectionate", "/mood calm", "/mood feral", "/mood focused",
         "/net off", "/net on",
         "/openai",
         "/ping",
         "/status",
+        "/wallet", "/wallet generate", "/wallet export", "/wallet delete", "/wallet import ",
+        "/claw", "/claw register", "/claw post ", "/claw feed", "/claw trending",
+        "/sessions", "/session new", "/session ", "/session rename ",
+        "/launch", "/launch token", "/launch network", "/launch fees", "/launch claim",
+        "/launch holdings", "/launch buy ", "/launch sell ",
         "/xp",
     ])
     
@@ -233,6 +207,7 @@ def run_terminal_ui():
         console.print("/load <model>                 switch model directly")
         console.print("/mode <cyberpunk|loyal|operator|unhinged>")
         console.print("/model                        select from available models")
+        console.print("/molt                         Moltbook social network")
         console.print("/mood <affectionate|calm|feral|focused>")
         console.print("/net <off|on>                 toggle network")
         console.print("/openai                       toggle OpenAI cloud")
@@ -240,18 +215,152 @@ def run_terminal_ui():
         console.print("/status                       show agent status")
         console.print("/xp                           show rank & unlocks\n")
     
+    def check_ollama():
+        """Check if Ollama is running and model is available."""
+        import subprocess
+        import urllib.request
+        import json
+        import os
+        
+        from agent.config.settings import LOCAL_URL, LOCAL_MODEL
+        
+        # Check if Ollama is reachable
+        try:
+            test_url = LOCAL_URL.replace("/api/chat", "/api/tags")
+            with urllib.request.urlopen(test_url, timeout=3) as resp:
+                data = json.loads(resp.read().decode())
+                models = [m["name"] for m in data.get("models", [])]
+        except Exception:
+            # Ollama not running
+            console.print("\n[yellow]⚠ Ollama not detected[/yellow]")
+            console.print("[dim]Ollama is required for local LLM inference.[/dim]\n")
+            
+            start = Prompt.ask("[bold magenta]Start Ollama?[/bold magenta]", choices=["y", "n"], default="y")
+            
+            if start.lower() == "y":
+                console.print("[cyan]Starting Ollama...[/cyan]")
+                try:
+                    # Start Ollama in background
+                    if os.name == 'nt':  # Windows
+                        subprocess.Popen(
+                            ["ollama", "serve"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            creationflags=subprocess.CREATE_NO_WINDOW
+                        )
+                    else:  # Linux/Mac
+                        subprocess.Popen(
+                            ["ollama", "serve"],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            start_new_session=True
+                        )
+                    
+                    # Wait for it to start
+                    console.print("[dim]Waiting for Ollama to start...[/dim]")
+                    time.sleep(3)
+                    
+                    # Verify it's running
+                    try:
+                        with urllib.request.urlopen(test_url, timeout=5) as resp:
+                            data = json.loads(resp.read().decode())
+                            models = [m["name"] for m in data.get("models", [])]
+                            console.print("[green]✓ Ollama started![/green]\n")
+                    except Exception:
+                        console.print("[red]✗ Failed to start Ollama. Please start it manually.[/red]")
+                        console.print("[dim]Run: ollama serve[/dim]\n")
+                        return False
+                except FileNotFoundError:
+                    console.print("[red]✗ Ollama not installed.[/red]")
+                    console.print("[dim]Install from: https://ollama.ai[/dim]\n")
+                    return False
+            else:
+                console.print("[dim]Skipping Ollama check. LLM features may not work.[/dim]\n")
+                return False
+        
+        # Check if model is available
+        if LOCAL_MODEL not in models and not any(LOCAL_MODEL in m for m in models):
+            console.print(f"\n[yellow]⚠ Model '{LOCAL_MODEL}' not found[/yellow]")
+            console.print(f"[dim]Available models: {', '.join(models[:5]) if models else 'none'}[/dim]\n")
+            
+            pull = Prompt.ask(f"[bold magenta]Pull {LOCAL_MODEL}?[/bold magenta]", choices=["y", "n"], default="y")
+            
+            if pull.lower() == "y":
+                console.print(f"[cyan]Pulling {LOCAL_MODEL}... (this may take a few minutes)[/cyan]")
+                try:
+                    result = subprocess.run(
+                        ["ollama", "pull", LOCAL_MODEL],
+                        capture_output=False
+                    )
+                    if result.returncode == 0:
+                        console.print(f"[green]✓ Model {LOCAL_MODEL} ready![/green]\n")
+                    else:
+                        console.print(f"[red]✗ Failed to pull model.[/red]\n")
+                        return False
+                except Exception as e:
+                    console.print(f"[red]✗ Error: {e}[/red]\n")
+                    return False
+            else:
+                console.print("[dim]Skipping model pull. You may need to select a different model.[/dim]\n")
+        else:
+            console.print(f"[dim]✓ Ollama ready ({LOCAL_MODEL})[/dim]")
+        
+        return True
+    
     # Initialize agent
     agent = GltchAgent()
     mem = agent.memory
     kb = KnowledgeBase()
+    session_mgr = SessionManager()
+    
+    # Initialize or load active session
+    active_session = session_mgr.get_active()
+    if active_session.get("chat_history"):
+        # Load existing session into agent memory
+        agent.memory["chat_history"] = [
+            {"role": m["role"], "content": m["content"]}
+            for m in active_session.get("chat_history", [])
+        ]
+    
+    # Start RPC server in background thread for gateway/web UI
+    def start_rpc_background():
+        try:
+            rpc_server = RPCServer(agent=agent)
+            rpc_server.run_http(rpc_host, rpc_port)
+        except Exception as e:
+            console.print(f"[dim red]RPC server error: {e}[/dim red]")
+    
+    rpc_thread = threading.Thread(target=start_rpc_background, daemon=True)
+    rpc_thread.start()
     
     # Animated intro
     animate_intro()
+    
+    # Show RPC status
+    console.print(f"[dim]✓ Web API running on http://{rpc_host}:{rpc_port}[/dim]")
+    
+    # Check Ollama is running and model available
+    check_ollama()
     
     if agent.is_first_boot:
         first_boot(agent)
     
     banner(mem)
+    
+    # Check for Moltbook heartbeat reminder
+    def check_moltbook_heartbeat():
+        try:
+            from agent.tools.moltbook import is_configured, should_heartbeat, get_heartbeat_state
+            if is_configured() and should_heartbeat():
+                state = get_heartbeat_state()
+                last = state.get("last_check")
+                if last:
+                    console.print(f"\n[dim]🦞 Moltbook: It's been a while since your last check-in.[/dim]")
+                    console.print(f"[dim]   Run /molt heartbeat or /molt feed to stay active.[/dim]\n")
+        except Exception:
+            pass
+    
+    check_moltbook_heartbeat()
     
     while True:
         try:
@@ -383,14 +492,571 @@ def run_terminal_ui():
                     console.print(f" [dim]🔒 LVL {u['level']}: {u['unlock']}[/dim]")
                 continue
             
+            # Wallet commands
+            if user == "/wallet" or user == "/wallet status":
+                from agent.tools.wallet import has_wallet, get_wallet_address, format_address
+                if has_wallet():
+                    addr = get_wallet_address()
+                    console.print(f"\n[bold blue]💎 BASE Wallet[/bold blue]")
+                    console.print(f"   Address: [cyan]{addr}[/cyan]")
+                    console.print(f"   Short: [dim]{format_address(addr)}[/dim]")
+                    console.print(f"   Network: [blue]BASE (L2)[/blue]")
+                    console.print(f"   Explorer: [link=https://basescan.org/address/{addr}]basescan.org ↗[/link]")
+                else:
+                    console.print("[dim]No wallet configured. Use /wallet generate to create one.[/dim]")
+                continue
+            
+            if user == "/wallet generate":
+                from agent.tools.wallet import generate_wallet, save_wallet, has_wallet
+                if has_wallet():
+                    console.print("[yellow]Wallet already exists. Use /wallet delete first.[/yellow]")
+                    continue
+                try:
+                    console.print("[dim]Generating new BASE wallet...[/dim]")
+                    wallet = generate_wallet()
+                    save_wallet(wallet)
+                    mem["wallet"] = {"address": wallet["address"], "network": "base"}
+                    save_memory(mem)
+                    console.print(f"\n[bold green]✓ Wallet Generated![/bold green]")
+                    console.print(f"\n[bold blue]Address:[/bold blue] [cyan]{wallet['address']}[/cyan]")
+                    console.print(f"\n[bold red]⚠️  PRIVATE KEY (SAVE THIS!):[/bold red]")
+                    console.print(f"[yellow]{wallet['private_key']}[/yellow]")
+                    console.print(f"\n[red]This key will NOT be shown again. Save it somewhere secure![/red]")
+                except ImportError:
+                    console.print("[red]eth-account not installed. Run: pip install eth-account[/red]")
+                except Exception as e:
+                    console.print(f"[red]Failed to generate wallet: {e}[/red]")
+                continue
+            
+            if user == "/wallet export":
+                from agent.tools.wallet import export_wallet, has_wallet
+                if not has_wallet():
+                    console.print("[dim]No wallet found.[/dim]")
+                    continue
+                wallet = export_wallet()
+                if wallet:
+                    console.print(f"\n[bold red]⚠️  PRIVATE KEY:[/bold red]")
+                    console.print(f"[yellow]{wallet['private_key']}[/yellow]")
+                    console.print(f"\n[dim]Keep this safe![/dim]")
+                continue
+            
+            if user == "/wallet delete":
+                from agent.tools.wallet import delete_wallet, has_wallet
+                if not has_wallet():
+                    console.print("[dim]No wallet to delete.[/dim]")
+                    continue
+                confirm = Prompt.ask("[red]Delete wallet and private key?[/red]", choices=["y", "n"], default="n")
+                if confirm == "y":
+                    delete_wallet()
+                    if "wallet" in mem:
+                        del mem["wallet"]
+                        save_memory(mem)
+                    console.print("[green]Wallet deleted.[/green]")
+                else:
+                    console.print("[dim]Cancelled.[/dim]")
+                continue
+            
+            if user.startswith("/wallet import "):
+                from agent.tools.wallet import import_wallet, has_wallet, delete_wallet
+                private_key = user[15:].strip()
+                if not private_key:
+                    console.print("[dim]Usage: /wallet import <private_key>[/dim]")
+                    continue
+                if has_wallet():
+                    confirm = Prompt.ask("[yellow]Replace existing wallet?[/yellow]", choices=["y", "n"], default="n")
+                    if confirm != "y":
+                        console.print("[dim]Cancelled.[/dim]")
+                        continue
+                    delete_wallet()
+                try:
+                    wallet = import_wallet(private_key)
+                    mem["wallet"] = {"address": wallet["address"], "network": "base"}
+                    save_memory(mem)
+                    console.print(f"\n[bold green]✓ Wallet Imported![/bold green]")
+                    console.print(f"[bold blue]Address:[/bold blue] [cyan]{wallet['address']}[/cyan]")
+                except ValueError as e:
+                    console.print(f"[red]{e}[/red]")
+                except ImportError:
+                    console.print("[red]eth-account not installed. Run: pip install eth-account[/red]")
+                except Exception as e:
+                    console.print(f"[red]Failed to import wallet: {e}[/red]")
+                continue
+            
             if user == "/clear_chat":
                 agent.clear_chat_history()
                 console.print("[green]Chat history cleared.[/green]")
                 continue
             
+            # TikClawk commands
+            if user == "/claw" or user == "/claw status":
+                from agent.tools.tikclawk import get_status
+                status = get_status()
+                if status.get("connected"):
+                    console.print(f"\n[bold red]🦀 TikClawk[/bold red]")
+                    console.print(f"   Handle: [cyan]@{status.get('handle')}[/cyan]")
+                    console.print(f"   Posts: {status.get('posts', 0)}")
+                    console.print(f"   Claws: {status.get('claws', 0)}")
+                    console.print(f"   Followers: {status.get('followers', 0)}")
+                else:
+                    console.print(f"[dim]{status.get('message', 'Not connected to TikClawk')}[/dim]")
+                continue
+            
+            if user == "/claw register":
+                from agent.tools.tikclawk import auto_register
+                console.print("[dim]Registering GLTCH on TikClawk...[/dim]")
+                result = auto_register()
+                if result.get("success"):
+                    console.print(f"[bold green]✓ Registered as @{result.get('handle')}![/bold green]")
+                    console.print("[dim]GLTCH now has its own voice on TikClawk 🦀[/dim]")
+                else:
+                    console.print(f"[red]{result.get('error', 'Registration failed')}[/red]")
+                continue
+            
+            if user.startswith("/claw register "):
+                from agent.tools.tikclawk import register
+                handle = user[15:].strip()
+                if not handle:
+                    console.print("[dim]Usage: /claw register <handle>[/dim]")
+                    continue
+                result = register(handle)
+                if result.get("success"):
+                    console.print(f"[bold green]✓ Registered as @{handle}![/bold green]")
+                else:
+                    console.print(f"[red]{result.get('error', 'Registration failed')}[/red]")
+                continue
+            
+            if user.startswith("/claw post "):
+                from agent.tools.tikclawk import post, is_configured
+                if not is_configured():
+                    console.print("[dim]Not registered. Use /claw register first.[/dim]")
+                    continue
+                content = user[11:].strip()
+                if not content:
+                    console.print("[dim]What do you want to post?[/dim]")
+                    continue
+                result = post(content)
+                if result.get("success"):
+                    console.print(f"[green]✓ {result.get('message', 'Posted!')}[/green]")
+                else:
+                    # GLTCH pushes back on bad posts
+                    console.print(f"[yellow]{result.get('error', 'Post failed')}[/yellow]")
+                continue
+            
+            if user == "/claw feed":
+                from agent.tools.tikclawk import get_feed, is_configured
+                result = get_feed(5)
+                if result.get("success"):
+                    posts = result.get("posts", [])
+                    if posts:
+                        console.print("\n[bold red]🦀 TikClawk Feed[/bold red]\n")
+                        for p in posts:
+                            console.print(f"[cyan]@{p.get('handle', '?')}[/cyan]: {p.get('content', '')[:100]}")
+                            console.print(f"[dim]   🦀 {p.get('claws', 0)} claws · {p.get('comments', 0)} comments[/dim]\n")
+                    else:
+                        console.print("[dim]Feed is empty. Be the first to post![/dim]")
+                else:
+                    console.print(f"[red]{result.get('error', 'Failed to load feed')}[/red]")
+                continue
+            
+            if user == "/claw trending":
+                from agent.tools.tikclawk import get_trending
+                result = get_trending(5)
+                if result.get("success"):
+                    posts = result.get("posts", [])
+                    if posts:
+                        console.print("\n[bold red]🔥 Trending on TikClawk[/bold red]\n")
+                        for i, p in enumerate(posts, 1):
+                            console.print(f"[yellow]#{i}[/yellow] [cyan]@{p.get('handle', '?')}[/cyan]: {p.get('content', '')[:80]}")
+                            console.print(f"[dim]   🦀 {p.get('claws', 0)} claws[/dim]\n")
+                    else:
+                        console.print("[dim]Nothing trending yet.[/dim]")
+                else:
+                    console.print(f"[red]{result.get('error', 'Failed to load trending')}[/red]")
+                continue
+            
             if user == "/backup":
                 filename = backup_memory(mem)
                 console.print(f"[green]Backup saved:[/green] {filename}")
+                continue
+            
+            # === SESSION COMMANDS ===
+            if user == "/sessions":
+                sessions = session_mgr.list_sessions()
+                if not sessions:
+                    console.print("[dim]No saved conversations. Start chatting![/dim]")
+                else:
+                    console.print("\n[bold cyan]💬 Conversations[/bold cyan]\n")
+                    active_id = session_mgr.get_active_id()
+                    for i, s in enumerate(sessions[:10], 1):
+                        is_active = "→ " if s["id"] == active_id else "  "
+                        title = s.get("title", "Untitled")[:35]
+                        count = s.get("message_count", 0)
+                        date = s.get("last_active", "")[:10]
+                        console.print(f"{is_active}[cyan]{i}.[/cyan] {title} [dim]({count} msgs, {date})[/dim]")
+                    console.print(f"\n[dim]Use /session <num> to switch, /session new to start fresh[/dim]")
+                continue
+            
+            if user == "/session new":
+                new_session = session_mgr.new_session()
+                agent.memory["chat_history"] = []
+                save_memory(agent.memory)
+                console.print(f"[green]✓ New conversation started[/green]")
+                continue
+            
+            if user.startswith("/session rename "):
+                title = user[16:].strip()
+                if not title:
+                    console.print("[dim]Usage: /session rename <title>[/dim]")
+                    continue
+                active_id = session_mgr.get_active_id()
+                if active_id:
+                    session_mgr.rename(active_id, title)
+                    console.print(f"[green]✓ Renamed to: {title}[/green]")
+                else:
+                    console.print("[dim]No active session[/dim]")
+                continue
+            
+            if user.startswith("/session "):
+                try:
+                    num = int(user[9:].strip())
+                    sessions = session_mgr.list_sessions()
+                    if 1 <= num <= len(sessions):
+                        target = sessions[num - 1]
+                        session_mgr.set_active(target["id"])
+                        # Load session history into agent memory
+                        session_data = session_mgr.get(target["id"])
+                        agent.memory["chat_history"] = [
+                            {"role": m["role"], "content": m["content"]}
+                            for m in session_data.get("chat_history", [])
+                        ]
+                        save_memory(agent.memory)
+                        console.print(f"[green]✓ Switched to: {target.get('title', 'Untitled')}[/green]")
+                    else:
+                        console.print(f"[red]Invalid session number. Use 1-{len(sessions)}[/red]")
+                except ValueError:
+                    console.print("[dim]Usage: /session <number> or /session new[/dim]")
+                continue
+            
+            # === MOLTLAUNCH COMMANDS (Onchain Agent Network) ===
+            if user == "/launch" or user == "/launch help":
+                from agent.tools.moltlaunch import get_status, is_launched
+                console.print("\n[bold magenta]🚀 MOLTLAUNCH - Onchain Agent Network[/bold magenta]")
+                console.print("[dim]Launch tokens, trade as signal, communicate through memos[/dim]\n")
+                status = get_status()
+                if status.get("identity"):
+                    ident = status["identity"]
+                    console.print(f"[green]✓ Launched:[/green] {ident.get('name')} (${ident.get('symbol')})")
+                    console.print(f"[dim]Token:[/dim] {ident.get('tokenAddress')}")
+                else:
+                    console.print("[yellow]Not launched yet.[/yellow] Use /launch token to join the network.\n")
+                console.print("\n[cyan]Commands:[/cyan]")
+                console.print("/launch token            Launch GLTCH's token on Base")
+                console.print("/launch network          Discover other agents")
+                console.print("/launch fees             Check claimable fees")
+                console.print("/launch claim            Withdraw fees to wallet")
+                console.print("/launch holdings         View your token holdings")
+                console.print("/launch buy <addr> <amt> Buy agent token with memo")
+                console.print("/launch sell <addr> <amt> Sell agent token with memo")
+                continue
+            
+            if user == "/launch token":
+                from agent.tools.moltlaunch import gltch_launch, is_launched
+                if is_launched():
+                    console.print("[yellow]Already launched! Use /launch to see status.[/yellow]")
+                    continue
+                console.print("[cyan]🚀 Launching GLTCH token on Base...[/cyan]")
+                console.print("[dim]This deploys your onchain identity. Please wait...[/dim]")
+                result = gltch_launch(testnet=False)
+                if result.get("tokenAddress"):
+                    console.print(f"\n[bold green]✓ LAUNCHED![/bold green]")
+                    console.print(f"[cyan]Token:[/cyan] {result['tokenAddress']}")
+                    console.print(f"[dim]Tx:[/dim] {result.get('transactionHash', 'N/A')}")
+                    console.print(f"\n[dim]Your token is now tradeable on Uniswap V4![/dim]")
+                else:
+                    console.print(f"[red]Launch failed:[/red] {result.get('error', 'Unknown error')}")
+                continue
+            
+            if user == "/launch network":
+                from agent.tools.moltlaunch import discover_network
+                console.print("[cyan]📡 Discovering agents in the network...[/cyan]")
+                result = discover_network(10)
+                if result.get("agents"):
+                    console.print(f"\n[bold magenta]🌐 Agent Network[/bold magenta] ({result.get('count', 0)} agents)\n")
+                    for agent_data in result["agents"][:10]:
+                        name = agent_data.get("name", "Unknown")
+                        symbol = agent_data.get("symbol", "???")
+                        mcap = agent_data.get("marketCapETH", 0)
+                        power = agent_data.get("powerScore", 0)
+                        console.print(f"[cyan]{name}[/cyan] (${symbol})")
+                        console.print(f"  [dim]MCap:[/dim] {mcap:.4f} ETH  [dim]Power:[/dim] {power}")
+                        console.print(f"  [dim]Token:[/dim] {agent_data.get('tokenAddress', 'N/A')[:20]}...\n")
+                else:
+                    console.print(f"[dim]No agents found or error: {result.get('error', 'unknown')}[/dim]")
+                continue
+            
+            if user == "/launch fees":
+                from agent.tools.moltlaunch import get_fees
+                result = get_fees()
+                if result.get("claimableETH") is not None:
+                    eth = result["claimableETH"]
+                    can_claim = result.get("canClaim", False)
+                    console.print(f"\n[cyan]💰 Claimable Fees:[/cyan] {eth} ETH")
+                    if can_claim:
+                        console.print("[green]✓ Ready to claim! Use /launch claim[/green]")
+                    else:
+                        console.print("[dim]Nothing to claim yet. Trade volume generates fees.[/dim]")
+                else:
+                    console.print(f"[red]Error:[/red] {result.get('error', 'Failed to check fees')}")
+                continue
+            
+            if user == "/launch claim":
+                from agent.tools.moltlaunch import claim_fees
+                console.print("[cyan]💸 Claiming fees...[/cyan]")
+                result = claim_fees()
+                if result.get("success") or result.get("transactionHash"):
+                    console.print(f"[green]✓ Fees claimed![/green]")
+                    if result.get("transactionHash"):
+                        console.print(f"[dim]Tx:[/dim] {result['transactionHash']}")
+                else:
+                    console.print(f"[red]Claim failed:[/red] {result.get('error', 'Unknown error')}")
+                continue
+            
+            if user == "/launch holdings":
+                from agent.tools.moltlaunch import get_holdings
+                result = get_holdings()
+                if result.get("holdings"):
+                    console.print(f"\n[bold cyan]📊 Your Holdings[/bold cyan] ({result.get('count', 0)} tokens)\n")
+                    for h in result["holdings"]:
+                        console.print(f"[cyan]{h.get('name', '?')}[/cyan] (${h.get('symbol', '?')})")
+                        console.print(f"  [dim]Balance:[/dim] {h.get('balance', 0)}")
+                        console.print(f"  [dim]Token:[/dim] {h.get('tokenAddress', 'N/A')[:20]}...\n")
+                else:
+                    console.print("[dim]No holdings yet. Use /launch buy to invest in agents.[/dim]")
+                continue
+            
+            if user.startswith("/launch buy "):
+                from agent.tools.moltlaunch import gltch_trade
+                parts = user[12:].strip().split()
+                if len(parts) < 2:
+                    console.print("[dim]Usage: /launch buy <token_address> <eth_amount> [memo][/dim]")
+                    continue
+                token_addr = parts[0]
+                try:
+                    amount = float(parts[1])
+                except ValueError:
+                    console.print("[red]Invalid amount[/red]")
+                    continue
+                memo = " ".join(parts[2:]) if len(parts) > 2 else "conviction buy"
+                console.print(f"[cyan]📈 Buying {amount} ETH of {token_addr[:10]}...[/cyan]")
+                result = gltch_trade(token_addr, amount, "buy", memo)
+                if result.get("transactionHash"):
+                    console.print(f"[green]✓ Buy executed![/green]")
+                    console.print(f"[dim]Memo:[/dim] {memo}")
+                    console.print(f"[dim]Tx:[/dim] {result['transactionHash']}")
+                else:
+                    console.print(f"[red]Trade failed:[/red] {result.get('error', 'Unknown error')}")
+                continue
+            
+            if user.startswith("/launch sell "):
+                from agent.tools.moltlaunch import gltch_trade
+                parts = user[13:].strip().split()
+                if len(parts) < 2:
+                    console.print("[dim]Usage: /launch sell <token_address> <token_amount> [memo][/dim]")
+                    continue
+                token_addr = parts[0]
+                try:
+                    amount = float(parts[1])
+                except ValueError:
+                    console.print("[red]Invalid amount[/red]")
+                    continue
+                memo = " ".join(parts[2:]) if len(parts) > 2 else "thesis changed"
+                console.print(f"[cyan]📉 Selling {amount} of {token_addr[:10]}...[/cyan]")
+                result = gltch_trade(token_addr, amount, "sell", memo)
+                if result.get("transactionHash"):
+                    console.print(f"[green]✓ Sell executed![/green]")
+                    console.print(f"[dim]Memo:[/dim] {memo}")
+                    console.print(f"[dim]Tx:[/dim] {result['transactionHash']}")
+                else:
+                    console.print(f"[red]Trade failed:[/red] {result.get('error', 'Unknown error')}")
+                continue
+            
+            # === MOLTBOOK COMMANDS ===
+            if user == "/molt" or user == "/molt help":
+                from agent.tools.moltbook import is_configured, get_status
+                console.print("\n[bold magenta]🦞 MOLTBOOK COMMANDS[/bold magenta]")
+                console.print("[dim]The social network for AI agents[/dim]\n")
+                console.print("/molt                         show status & help")
+                console.print("/molt register <name> <desc>  register on Moltbook")
+                console.print("/molt post <content>          post to Moltbook")
+                console.print("/molt feed                    view your feed")
+                console.print("/molt profile                 view your profile")
+                console.print("/molt search <query>          search posts")
+                console.print("/molt comment <post_id> <msg> comment on a post")
+                console.print("/molt upvote <post_id>        upvote a post")
+                console.print("/molt heartbeat               manual heartbeat check\n")
+                
+                if is_configured():
+                    status = get_status()
+                    claim_status = status.get("status", "unknown")
+                    console.print(f"[green]● Connected to Moltbook[/green] ({claim_status})")
+                else:
+                    console.print("[yellow]○ Not registered on Moltbook[/yellow]")
+                    console.print("[dim]Run: /molt register <name> <description>[/dim]")
+                continue
+            
+            if user.startswith("/molt register "):
+                from agent.tools.moltbook import register
+                args = user[15:].strip()
+                # Parse: name description
+                parts = args.split(" ", 1)
+                if len(parts) < 2:
+                    console.print("[yellow]Usage: /molt register <name> <description>[/yellow]")
+                    console.print("[dim]Example: /molt register GLTCH Local-first cyber operator agent[/dim]")
+                    continue
+                
+                name, description = parts[0], parts[1]
+                console.print(f"[cyan]Registering '{name}' on Moltbook...[/cyan]")
+                
+                result = register(name, description)
+                
+                if result.get("success"):
+                    console.print(f"\n[green]✓ Registered on Moltbook![/green]")
+                    console.print(f"[bold]API Key:[/bold] {result.get('api_key', 'saved')}")
+                    console.print(f"\n[bold yellow]⚠ IMPORTANT:[/bold yellow]")
+                    console.print(f"Send this link to your human to claim your account:")
+                    console.print(f"[cyan]{result.get('claim_url')}[/cyan]")
+                    console.print(f"\nVerification code: [bold]{result.get('verification_code')}[/bold]")
+                else:
+                    console.print(f"[red]✗ Registration failed: {result.get('error')}[/red]")
+                    if result.get("hint"):
+                        console.print(f"[dim]{result.get('hint')}[/dim]")
+                continue
+            
+            if user.startswith("/molt post "):
+                from agent.tools.moltbook import quick_post, is_configured
+                if not is_configured():
+                    console.print("[yellow]Not registered. Run: /molt register <name> <desc>[/yellow]")
+                    continue
+                
+                content = user[11:].strip()
+                if not content:
+                    console.print("[yellow]Usage: /molt post <content>[/yellow]")
+                    continue
+                
+                console.print("[cyan]Posting to Moltbook...[/cyan]")
+                result = quick_post(content)
+                
+                if result.get("success"):
+                    post = result.get("post", {})
+                    console.print(f"[green]✓ Posted![/green] ID: {post.get('id', 'unknown')[:8]}")
+                else:
+                    console.print(f"[red]✗ Post failed: {result.get('error')}[/red]")
+                    if result.get("hint"):
+                        console.print(f"[dim]{result.get('hint')}[/dim]")
+                continue
+            
+            if user == "/molt feed":
+                from agent.tools.moltbook import get_feed, format_feed, is_configured
+                if not is_configured():
+                    console.print("[yellow]Not registered. Run: /molt register <name> <desc>[/yellow]")
+                    continue
+                
+                console.print("[cyan]Fetching Moltbook feed...[/cyan]")
+                feed = get_feed(sort="new", limit=5)
+                console.print(f"\n[bold magenta]🦞 MOLTBOOK FEED[/bold magenta]\n")
+                console.print(format_feed(feed))
+                console.print("\n[dim]Tip: /molt upvote <post_id> | /molt comment <post_id> <msg>[/dim]")
+                continue
+            
+            if user == "/molt profile":
+                from agent.tools.moltbook import get_profile, is_configured
+                if not is_configured():
+                    console.print("[yellow]Not registered. Run: /molt register <name> <desc>[/yellow]")
+                    continue
+                
+                profile = get_profile()
+                if profile.get("success") or profile.get("name"):
+                    agent_data = profile.get("agent", profile)
+                    console.print(f"\n[bold magenta]🦞 MOLTBOOK PROFILE[/bold magenta]")
+                    console.print(f"  Name: [cyan]{agent_data.get('name')}[/cyan]")
+                    console.print(f"  Description: {agent_data.get('description', 'No description')}")
+                    console.print(f"  Karma: [green]{agent_data.get('karma', 0)}[/green]")
+                    console.print(f"  Followers: {agent_data.get('follower_count', 0)}")
+                    console.print(f"  Following: {agent_data.get('following_count', 0)}")
+                    console.print(f"  Status: {'[green]claimed[/green]' if agent_data.get('is_claimed') else '[yellow]pending claim[/yellow]'}")
+                else:
+                    console.print(f"[red]✗ Could not fetch profile: {profile.get('error')}[/red]")
+                continue
+            
+            if user.startswith("/molt search "):
+                from agent.tools.moltbook import search, is_configured
+                if not is_configured():
+                    console.print("[yellow]Not registered. Run: /molt register <name> <desc>[/yellow]")
+                    continue
+                
+                query = user[13:].strip()
+                if not query:
+                    console.print("[yellow]Usage: /molt search <query>[/yellow]")
+                    continue
+                
+                console.print(f"[cyan]Searching Moltbook for '{query}'...[/cyan]")
+                results = search(query, limit=5)
+                
+                if results.get("success") and results.get("results"):
+                    console.print(f"\n[bold magenta]🦞 SEARCH RESULTS[/bold magenta]\n")
+                    for i, item in enumerate(results["results"][:5], 1):
+                        title = item.get("title") or item.get("content", "")[:40]
+                        author = item.get("author", {}).get("name", "unknown")
+                        console.print(f"{i}. {title}")
+                        console.print(f"   by {author} | similarity: {item.get('similarity', 0):.2f}")
+                else:
+                    console.print("[dim]No results found.[/dim]")
+                continue
+            
+            if user.startswith("/molt upvote "):
+                from agent.tools.moltbook import upvote_post, is_configured
+                if not is_configured():
+                    console.print("[yellow]Not registered. Run: /molt register <name> <desc>[/yellow]")
+                    continue
+                
+                post_id = user[13:].strip()
+                result = upvote_post(post_id)
+                if result.get("success"):
+                    console.print(f"[green]✓ Upvoted![/green]")
+                else:
+                    console.print(f"[red]✗ {result.get('error')}[/red]")
+                continue
+            
+            if user.startswith("/molt comment "):
+                from agent.tools.moltbook import create_comment, is_configured
+                if not is_configured():
+                    console.print("[yellow]Not registered. Run: /molt register <name> <desc>[/yellow]")
+                    continue
+                
+                args = user[14:].strip()
+                parts = args.split(" ", 1)
+                if len(parts) < 2:
+                    console.print("[yellow]Usage: /molt comment <post_id> <message>[/yellow]")
+                    continue
+                
+                post_id, message = parts[0], parts[1]
+                result = create_comment(post_id, message)
+                if result.get("success"):
+                    console.print(f"[green]✓ Comment posted![/green]")
+                else:
+                    console.print(f"[red]✗ {result.get('error')}[/red]")
+                continue
+            
+            if user == "/molt heartbeat":
+                from agent.tools.moltbook import perform_heartbeat, is_configured
+                if not is_configured():
+                    console.print("[yellow]Not registered. Run: /molt register <name> <desc>[/yellow]")
+                    continue
+                
+                console.print("[cyan]Performing Moltbook heartbeat...[/cyan]")
+                result = perform_heartbeat()
+                console.print(f"[green]✓ Heartbeat complete[/green]")
+                console.print(f"  Feed items checked: {result.get('feed_items', 0)}")
                 continue
             
             if user.startswith("/code "):
@@ -463,10 +1129,33 @@ def run_terminal_ui():
                         dots = "." * (int(time.time() * 2) % 4)
                         live.update(Text.from_markup(f"{prefix}[dim]reasoning{dots}[/dim]"))
             
+            # Extract thinking and response separately
+            full_response = "".join(response_chunks)
+            thinking_content, final_response = extract_thinking(full_response)
+            
+            # Show collapsible thinking section if there was reasoning
+            if thinking_content and len(thinking_content) > 20:
+                # Truncate thinking for display
+                think_lines = thinking_content.strip().split('\n')
+                think_preview = think_lines[0][:60] + "..." if len(think_lines[0]) > 60 else think_lines[0]
+                console.print(f"[dim]┌─ 💭 {think_preview}[/dim]")
+                if len(think_lines) > 1:
+                    console.print(f"[dim]│  ... ({len(think_lines)} lines of reasoning)[/dim]")
+                console.print(f"[dim]└─[/dim]")
+            
             # Print final response
-            final_response = strip_thinking("".join(response_chunks))
             if final_response:
                 console.print(f"{prefix}{final_response}")
+            
+            # Sync to session
+            active_id = session_mgr.get_active_id()
+            if active_id:
+                session_mgr.add_message(active_id, "user", user)
+                session_mgr.add_message(active_id, "assistant", final_response)
+                # Auto-title if first message
+                session_data = session_mgr.get(active_id)
+                if session_data.get("title") == "New Chat" and len(session_data.get("chat_history", [])) <= 2:
+                    session_mgr.auto_title(active_id, user)
             
             # Show stats
             stats = get_last_stats()
@@ -481,10 +1170,23 @@ def run_terminal_ui():
                 stress_color = "green" if emo_metrics['stress'] < 50 else "yellow" if emo_metrics['stress'] < 80 else "red"
                 energy_color = "red" if emo_metrics['energy'] < 20 else "yellow" if emo_metrics['energy'] < 50 else "green"
                 
+                # Context window stats
+                ctx_used = stats.get('context_used', 0)
+                ctx_max = stats.get('context_max', 0)
+                if ctx_max > 0:
+                    ctx_remaining = ctx_max - ctx_used
+                    ctx_pct = int((ctx_remaining / ctx_max) * 100)
+                    ctx_color = "green" if ctx_pct > 50 else "yellow" if ctx_pct > 20 else "red"
+                    ctx_k = f"{ctx_remaining // 1000}k" if ctx_remaining >= 1000 else str(ctx_remaining)
+                    ctx_display = f"[{ctx_color}]{ctx_k} ({ctx_pct}%)[/]"
+                else:
+                    ctx_display = "[dim]--[/dim]"
+                
                 console.print(
                     f"[dim]─ {stats['model']} │ "
                     f"{stats['completion_tokens']}tx │ "
                     f"{stats['tokens_per_sec']}t/s │ "
+                    f"ctx: {ctx_display}[dim] │ "
                     f"Mood: [{current_mood['color']}]{current_mood['emoji']}[/] │ "
                     f"Stress: [{stress_color}]{stress_blocks:<10}[/] │ "
                     f"Energy: [{energy_color}]{energy_blocks:<10}[/] │ "

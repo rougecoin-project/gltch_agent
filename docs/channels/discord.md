@@ -1,104 +1,179 @@
-# Discord
+# Discord Integration
 
-Set up GLTCH as a Discord bot.
-
-## Prerequisites
-
-- A Discord account
-- A server where you have admin permissions
+Add GLTCH to your Discord server for AI assistance in channels or DMs.
 
 ## Setup
 
 ### 1. Create a Discord Application
 
 1. Go to [Discord Developer Portal](https://discord.com/developers/applications)
-2. Click "New Application"
-3. Name it "GLTCH" (or your preference)
-4. Click "Create"
+2. Click **New Application**
+3. Name it (e.g., "GLTCH")
+4. Go to **Bot** section
+5. Click **Add Bot**
+6. Copy the **bot token**
 
-### 2. Create a Bot
+### 2. Configure Bot Permissions
 
-1. Go to the "Bot" section
-2. Click "Add Bot"
-3. Copy the **Bot Token** (keep this secret!)
+Under **OAuth2 > URL Generator**:
 
-### 3. Enable Intents
-
-Under "Privileged Gateway Intents", enable:
-- **MESSAGE CONTENT INTENT** (required for reading messages)
-
-### 4. Configure GLTCH
-
-Add your token to `.env`:
-
-```bash
-DISCORD_BOT_TOKEN=your-bot-token-here
-```
-
-Or use the CLI:
-
-```bash
-gltch channels login discord
-```
-
-### 5. Invite the Bot
-
-1. Go to "OAuth2" > "URL Generator"
-2. Select scopes:
+1. Select scopes:
    - `bot`
-3. Select permissions:
-   - Read Messages/View Channels
+   - `applications.commands`
+
+2. Select bot permissions:
    - Send Messages
    - Read Message History
-4. Copy the generated URL
-5. Open it and select your server
+   - Use Slash Commands
+   - Embed Links
+   - Attach Files
 
-### 6. Start the Gateway
+3. Copy the generated URL and open it to invite the bot
+
+### 3. Configure GLTCH
+
+Set the bot token:
 
 ```bash
-gltch gateway start
+export DISCORD_BOT_TOKEN=your-bot-token-here
+```
+
+Or via Web UI:
+1. Open http://localhost:3000
+2. Go to **Settings > API Keys**
+3. Click **Add Key** next to Discord
+4. Paste your bot token
+
+### 4. Enable Intents
+
+In Discord Developer Portal:
+1. Go to **Bot** section
+2. Enable **Message Content Intent**
+3. Save changes
+
+### 5. Start the Gateway
+
+```bash
+cd gateway
+npm run dev
 ```
 
 ## Usage
 
-### In Direct Messages
-
-Just message the bot directly. All messages will get a response.
-
-### In Servers
-
-The bot responds when:
-- Mentioned with `@GLTCH`
-- Message starts with `!gltch` (configurable)
-
-Example:
+### Mention the Bot
 ```
-@GLTCH scan my network
+@GLTCH what's the weather like?
 ```
 
-## Configuration Options
+### DM the Bot
+Send a direct message to the bot for private conversations.
 
-In your config:
+### Slash Commands
+```
+/gltch ask What is the meaning of life?
+/gltch status
+/gltch mode cyberpunk
+```
 
-```json
-{
-  "channels": {
-    "discord": {
-      "prefix": "!gltch",
-      "mentionRequired": false
-    }
-  }
-}
+## Features
+
+### Per-Server Sessions
+Each server has its own conversation context.
+
+### Per-User DMs
+Private conversations are separate from server chats.
+
+### Rich Embeds
+GLTCH responses use Discord embeds for better formatting.
+
+### Typing Indicator
+Shows "GLTCH is typing..." while generating responses.
+
+## Configuration
+
+```bash
+# Bot token (required)
+DISCORD_BOT_TOKEN=your-token
+
+# Optional: Command prefix (default: /)
+DISCORD_PREFIX=/
+
+# Optional: Restrict to specific servers
+DISCORD_ALLOWED_GUILDS=guild_id_1,guild_id_2
+
+# Optional: Restrict to specific channels
+DISCORD_ALLOWED_CHANNELS=channel_id_1,channel_id_2
+
+# Optional: Admin user IDs (can use all commands)
+DISCORD_ADMINS=user_id_1,user_id_2
+```
+
+## Slash Commands
+
+Register slash commands:
+
+```bash
+cd gateway
+npm run register-commands
+```
+
+Available commands:
+| Command | Description |
+|---------|-------------|
+| `/gltch ask <message>` | Ask GLTCH something |
+| `/gltch status` | Show agent status |
+| `/gltch mode <mode>` | Change personality |
+| `/gltch mood <mood>` | Change mood |
+| `/gltch clear` | Clear conversation |
+
+## Security
+
+### Server Restrictions
+
+Limit which servers can use the bot:
+
+```bash
+export DISCORD_ALLOWED_GUILDS=123456789,987654321
+```
+
+### Channel Restrictions
+
+Limit which channels the bot responds in:
+
+```bash
+export DISCORD_ALLOWED_CHANNELS=123456789
+```
+
+### Admin Users
+
+Give specific users full access:
+
+```bash
+export DISCORD_ADMINS=your_user_id
 ```
 
 ## Troubleshooting
 
-### Bot doesn't respond
+### Bot Offline
 
-1. Check the bot has MESSAGE CONTENT INTENT enabled
-2. Verify the bot has permissions in the channel
-3. Check gateway logs: `gltch gateway logs`
+1. Check gateway logs
+2. Verify bot token is correct
+3. Ensure Message Content Intent is enabled
 
-### "Missing Access" error
+### Bot Not Responding to Messages
 
-The bot needs to be invited with the correct permissions. Re-generate the invite URL with required permissions.
+1. Check if bot has permissions in the channel
+2. Verify the channel is allowed (if restrictions are set)
+3. Make sure you're mentioning the bot or using slash commands
+
+### Slash Commands Not Showing
+
+1. Run `npm run register-commands`
+2. Wait a few minutes (Discord caches commands)
+3. Try refreshing Discord (Ctrl+R)
+
+### Rate Limited
+
+Discord has rate limits. If you see 429 errors:
+1. Reduce message frequency
+2. Implement message queuing in your adapter

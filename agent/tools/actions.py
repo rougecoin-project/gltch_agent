@@ -17,41 +17,58 @@ from agent.tools.shell import run_shell
 from agent.tools.file_ops import file_write, file_append, file_read, file_ls
 
 
+def extract_thinking(response: str) -> tuple[str, str]:
+    """
+    Extract thinking content and response separately.
+    Returns (thinking_content, response_content).
+    """
+    thinking = ""
+    clean_response = response
+    
+    # Extract thinking content
+    think_match = re.search(r'<think>(.*?)</think>', response, flags=re.DOTALL)
+    if think_match:
+        thinking = think_match.group(1).strip()
+        # Get content after </think>
+        parts = response.split('</think>')
+        if len(parts) > 1:
+            clean_response = parts[-1].strip()
+        else:
+            clean_response = ""
+    else:
+        # Handle unclosed think block (still streaming)
+        if '<think>' in response:
+            parts = response.split('<think>')
+            thinking = parts[-1].strip() if len(parts) > 1 else ""
+            clean_response = ""
+    
+    return thinking, clean_response
+
+
 def strip_thinking(response: str) -> str:
     """
     Remove <think>...</think> blocks from reasoning models like DeepSeek R1.
     Handles both closed and unclosed think blocks.
     """
-    # First: if there's content after </think>, extract that
-    if '</think>' in response:
-        parts = response.split('</think>')
-        after_think = parts[-1].strip()
-        if after_think:
-            return after_think
+    _, clean = extract_thinking(response)
     
-    # Second: remove complete <think>...</think> blocks
-    cleaned = re.sub(r'<think>.*?</think>', '', response, flags=re.DOTALL)
+    if clean:
+        return clean
     
-    # Third: remove any unclosed <think> blocks
-    cleaned = re.sub(r'<think>.*$', '', cleaned, flags=re.DOTALL)
-    cleaned = cleaned.strip()
+    # If no response after thinking, try to extract something meaningful
+    think_match = re.search(r'<think>(.*?)</think>', response, flags=re.DOTALL)
+    if think_match:
+        think_content = think_match.group(1).strip()
+        lines = [l.strip() for l in think_content.split('\n') if l.strip()]
+        for line in reversed(lines):
+            if any(x in line.lower() for x in ['should i', 'let me', 'i need to', 'thinking', 'the user']):
+                continue
+            if len(line) > 5 and len(line) < 200:
+                return line
+        if lines:
+            return lines[-1][:150]
     
-    # If still empty and there's a complete think block, extract last meaningful line
-    if not cleaned:
-        think_match = re.search(r'<think>(.*?)</think>', response, flags=re.DOTALL)
-        if think_match:
-            think_content = think_match.group(1).strip()
-            lines = [l.strip() for l in think_content.split('\n') if l.strip()]
-            for line in reversed(lines):
-                if any(x in line.lower() for x in ['should i', 'let me', 'i need to', 'thinking', 'the user']):
-                    continue
-                if len(line) > 5 and len(line) < 200:
-                    cleaned = line
-                    break
-            if not cleaned and lines:
-                cleaned = lines[-1][:150]
-    
-    return cleaned
+    return ""
 
 
 def verify_suggestions(response: str) -> List[str]:

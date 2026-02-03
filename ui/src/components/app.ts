@@ -1,9 +1,21 @@
 /**
  * GLTCH Dashboard - Main App Component
+ * Cyberpunk UI inspired by MoltLaunch
  */
 
 import { LitElement, html, css } from 'lit';
 import { customElement, state } from 'lit/decorators.js';
+
+import './sidebar.js';
+import './header.js';
+import './chat.js';
+import './status.js';
+import './settings.js';
+import './wallet.js';
+import './docs.js';
+import './ticker.js';
+
+type View = 'chat' | 'status' | 'settings' | 'wallet' | 'docs';
 
 @customElement('gltch-app')
 export class GltchApp extends LitElement {
@@ -12,97 +24,128 @@ export class GltchApp extends LitElement {
       display: flex;
       flex-direction: column;
       height: 100vh;
+      height: 100dvh;
       background: var(--bg-primary);
+      overflow: hidden;
     }
 
-    header {
+    .layout {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 16px 24px;
-      background: var(--bg-secondary);
-      border-bottom: 1px solid var(--border);
-    }
-
-    .logo {
-      font-size: 24px;
-      font-weight: bold;
-      color: var(--accent-red);
-    }
-
-    nav {
-      display: flex;
-      gap: 8px;
-    }
-
-    nav button {
-      padding: 8px 16px;
-      background: transparent;
-      border: 1px solid var(--border);
-      color: var(--text-secondary);
-      border-radius: 4px;
-      transition: all 0.2s;
-    }
-
-    nav button:hover {
-      border-color: var(--text-secondary);
-      color: var(--text-primary);
-    }
-
-    nav button.active {
-      background: var(--accent-red);
-      border-color: var(--accent-red);
-      color: white;
-    }
-
-    main {
       flex: 1;
       overflow: hidden;
     }
 
-    .view {
-      display: none;
-      height: 100%;
+    .main-content {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      position: relative;
     }
 
-    .view.active {
-      display: block;
+    .view-container {
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* Scanline effect */
+    .scanline {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, transparent, var(--neon-green), transparent);
+      opacity: 0.1;
+      pointer-events: none;
+      animation: scanline 8s linear infinite;
+      z-index: 9999;
+    }
+
+    /* Mobile responsive */
+    @media (max-width: 768px) {
+      gltch-sidebar {
+        display: none;
+      }
     }
   `;
 
   @state()
-  private activeView = 'chat';
+  private currentView: View = 'chat';
+
+  @state()
+  private stats = {
+    model: 'loading...',
+    tokens: 0,
+    speed: 0,
+    level: 1,
+    xp: 0,
+    mood: 'focused'
+  };
+
+  private handleViewChange(e: CustomEvent) {
+    this.currentView = e.detail.view;
+  }
+
+  private renderView() {
+    switch (this.currentView) {
+      case 'chat':
+        return html`<gltch-chat></gltch-chat>`;
+      case 'status':
+        return html`<gltch-status></gltch-status>`;
+      case 'settings':
+        return html`<gltch-settings></gltch-settings>`;
+      case 'wallet':
+        return html`<gltch-wallet></gltch-wallet>`;
+      case 'docs':
+        return html`<gltch-docs></gltch-docs>`;
+      default:
+        return html`<gltch-chat></gltch-chat>`;
+    }
+  }
+
+  connectedCallback() {
+    super.connectedCallback();
+    // Load initial stats
+    this.loadStats();
+    setInterval(() => this.loadStats(), 10000);
+  }
+
+  private async loadStats() {
+    try {
+      const res = await fetch('/api/settings');
+      if (res.ok) {
+        const data = await res.json();
+        this.stats = {
+          model: data.model || 'unknown',
+          tokens: data.tokens || 0,
+          speed: data.speed || 0,
+          level: data.level || 1,
+          xp: data.xp || 0,
+          mood: data.mood || 'focused'
+        };
+      }
+    } catch {
+      // ignore
+    }
+  }
 
   render() {
     return html`
-      <header>
-        <div class="logo">GLTCH // DASHBOARD</div>
-        <nav>
-          <button 
-            class=${this.activeView === 'chat' ? 'active' : ''}
-            @click=${() => this.activeView = 'chat'}
-          >Chat</button>
-          <button 
-            class=${this.activeView === 'status' ? 'active' : ''}
-            @click=${() => this.activeView = 'status'}
-          >Status</button>
-          <button 
-            class=${this.activeView === 'settings' ? 'active' : ''}
-            @click=${() => this.activeView = 'settings'}
-          >Settings</button>
-        </nav>
-      </header>
-      <main>
-        <div class="view ${this.activeView === 'chat' ? 'active' : ''}">
-          <gltch-chat></gltch-chat>
+      <div class="scanline"></div>
+      <gltch-header .stats=${this.stats}></gltch-header>
+      <div class="layout">
+        <gltch-sidebar 
+          .currentView=${this.currentView}
+          @view-change=${this.handleViewChange}
+        ></gltch-sidebar>
+        <div class="main-content">
+          <div class="view-container">
+            ${this.renderView()}
+          </div>
         </div>
-        <div class="view ${this.activeView === 'status' ? 'active' : ''}">
-          <gltch-status></gltch-status>
-        </div>
-        <div class="view ${this.activeView === 'settings' ? 'active' : ''}">
-          <gltch-settings></gltch-settings>
-        </div>
-      </main>
+      </div>
+      <gltch-ticker></gltch-ticker>
     `;
   }
 }

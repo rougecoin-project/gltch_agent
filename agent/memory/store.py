@@ -20,10 +20,12 @@ DEFAULT_STATE = {
     "missions": [],          # {id, ts, text, done_ts?}
     "network_active": False,
     "boost": False,          # True = use remote 4090, False = local
+    "openai_mode": False,    # True = use OpenAI cloud API
     "chat_history": [],      # last N turns for LLM context
     "operator": None,        # who runs this console
     "xp": 0,
-    "level": 1
+    "level": 1,
+    "api_keys": {}           # provider -> key mappings
 }
 
 
