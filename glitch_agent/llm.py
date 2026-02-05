@@ -1,19 +1,24 @@
 """
 GLTCH LLM Module
 Local-first, with optional remote boost.
-Supports both Ollama and LM Studio (OpenAI-compatible) backends.
+Supports Ollama, LM Studio (new API), and OpenAI backends.
 """
 import json
 import time
 import urllib.request
 import urllib.error
-from typing import List, Dict, Generator, Any
+import subprocess
+from typing import List, Dict, Generator, Any, Optional
 from config import (
     LOCAL_URL, LOCAL_MODEL, LOCAL_CTX, LOCAL_BACKEND,
     REMOTE_URL, REMOTE_MODEL, REMOTE_CTX, REMOTE_BACKEND,
     OPENAI_API_KEY, OPENAI_URL, OPENAI_MODEL, OPENAI_CTX,
     TIMEOUT
 )
+
+# Current active model (can be changed at runtime)
+_active_local_model = LOCAL_MODEL
+_active_remote_model = REMOTE_MODEL
 
 # Last request stats (updated after each call)
 last_stats = {
@@ -201,13 +206,13 @@ def stream_llm(
             }
         elif use_remote:
             url = REMOTE_URL
-            model = REMOTE_MODEL
+            model = get_active_model(boost=True)
             ctx_max = REMOTE_CTX
             backend = REMOTE_BACKEND
             headers = {"Content-Type": "application/json"}
         else:
             url = LOCAL_URL
-            model = LOCAL_MODEL
+            model = get_active_model(boost=False)
             ctx_max = LOCAL_CTX
             backend = LOCAL_BACKEND
             headers = {"Content-Type": "application/json"}
@@ -236,6 +241,12 @@ def stream_llm(
                 "num_predict": 1000,  # Increased from 200 to prevent cutoffs
                 "stop": ["\n\n\n", "---", "USER:", "user:"]
             }
+        elif backend == "lmstudio":
+            # LM Studio new API format
+            payload["max_tokens"] = 1000
+            # LM Studio uses "model" but can auto-detect if not specified
+            if model == "auto":
+                del payload["model"]  # Let LM Studio use currently loaded model
         else:
             # OpenAI-compatible (DeepSeek R1 needs more headroom)
             payload["max_tokens"] = 1000  # Increased for deep thinking
@@ -260,7 +271,8 @@ def stream_llm(
                         
                     line_str = line.decode("utf-8").strip()
                     
-                    if backend == "openai":
+                    if backend in ("openai", "lmstudio"):
+                        # Both OpenAI and LM Studio use SSE format
                         if line_str.startswith("data: "):
                             line_str = line_str[6:]
                         if line_str == "[DONE]":
@@ -273,7 +285,7 @@ def stream_llm(
                                 "context_max": ctx_max,
                                 "time_ms": elapsed_ms,
                                 "tokens_per_sec": round(completion_tokens / (elapsed_ms / 1000), 1) if elapsed_ms > 0 else 0,
-                                "model": model
+                                "model": model if model != "auto" else get_loaded_model(boost=use_remote) or "unknown"
                             }
                             return
                             
@@ -359,8 +371,12 @@ def test_connection(boost: bool = False) -> bool:
     backend = REMOTE_BACKEND if boost else LOCAL_BACKEND
     
     # Pick appropriate health check endpoint
-    if backend == "openai":
-        # LM Studio: /v1/models. Requires stripping /chat/completions
+    if backend == "lmstudio":
+        # LM Studio new API: /api/v1/models
+        base = url.replace("/api/v1/chat", "")
+        test_url = base + "/api/v1/models"
+    elif backend == "openai":
+        # Legacy LM Studio or OpenAI: /v1/models
         base = url.split("/chat/completions")[0]
         test_url = base + "/models"
     else:
@@ -374,14 +390,19 @@ def test_connection(boost: bool = False) -> bool:
     except Exception:
         return False
 
+
 def list_models(boost: bool = False) -> List[str]:
     """Fetch available models from the active backend."""
     url = REMOTE_URL if boost else LOCAL_URL
     backend = REMOTE_BACKEND if boost else LOCAL_BACKEND
     
     # Construct endpoint
-    if backend == "openai":
-        # Strip chat/completions to get base/models
+    if backend == "lmstudio":
+        # LM Studio new API
+        base = url.replace("/api/v1/chat", "")
+        api_url = base + "/api/v1/models"
+    elif backend == "openai":
+        # Legacy LM Studio or OpenAI
         base = url.split("/chat/completions")[0]
         api_url = base + "/models"
     else:
@@ -393,9 +414,15 @@ def list_models(boost: bool = False) -> List[str]:
         with urllib.request.urlopen(req, timeout=5) as response:
             data = json.loads(response.read().decode())
             
-            if backend == "openai":
+            if backend == "lmstudio":
+                # LM Studio new API format
+                # Can be {"data": [...]} or just a list
+                models = data.get("data", data) if isinstance(data, dict) else data
+                if isinstance(models, list):
+                    return [m.get("id", m.get("path", str(m))) for m in models if isinstance(m, dict)]
+                return []
+            elif backend == "openai":
                 # Standard OpenAI format: {"data": [{"id": "..."}]}
-                # Also handle LM Studio which sometimes uses 'data' or just list
                 models = data.get("data", [])
                 return [m["id"] for m in models]
             else:
@@ -405,11 +432,105 @@ def list_models(boost: bool = False) -> List[str]:
     except Exception as e:
         return [f"Error fetching models: {str(e)}"]
 
+
+def get_loaded_model(boost: bool = False) -> Optional[str]:
+    """Get the currently loaded model in LM Studio."""
+    url = REMOTE_URL if boost else LOCAL_URL
+    backend = REMOTE_BACKEND if boost else LOCAL_BACKEND
+    
+    if backend != "lmstudio":
+        return None
+        
+    try:
+        base = url.replace("/api/v1/chat", "")
+        api_url = base + "/api/v1/models"
+        req = urllib.request.Request(api_url)
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode())
+            # Check for loaded/active model
+            models = data.get("data", [])
+            for m in models:
+                if m.get("state") == "loaded" or m.get("loaded"):
+                    return m.get("id", m.get("path"))
+            # If none explicitly loaded, return first
+            if models:
+                return models[0].get("id", models[0].get("path"))
+    except Exception:
+        pass
+    return None
+
+
+def load_model(model_path: str, boost: bool = False) -> bool:
+    """Load a specific model in LM Studio."""
+    url = REMOTE_URL if boost else LOCAL_URL
+    backend = REMOTE_BACKEND if boost else LOCAL_BACKEND
+    
+    if backend != "lmstudio":
+        return False
+        
+    try:
+        base = url.replace("/api/v1/chat", "")
+        api_url = base + "/api/v1/models/load"
+        payload = {"model": model_path}
+        
+        req = urllib.request.Request(
+            api_url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=60) as response:
+            return response.status == 200
+    except Exception:
+        return False
+
+
+def start_lmstudio_server() -> bool:
+    """Start LM Studio server using lms CLI."""
+    try:
+        # Check if lms command exists
+        result = subprocess.run(
+            ["lms", "status"],
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        if "running" in result.stdout.lower():
+            return True  # Already running
+            
+        # Start the server
+        subprocess.Popen(
+            ["lms", "server", "start"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL
+        )
+        time.sleep(2)  # Give it time to start
+        return test_connection(boost=True)
+    except FileNotFoundError:
+        return False  # lms not installed
+    except Exception:
+        return False
+
+
 def set_model(model_name: str, boost: bool = False):
     """Runtime override of the selected model."""
-    global LOCAL_MODEL, REMOTE_MODEL
+    global _active_local_model, _active_remote_model
     if boost:
-        REMOTE_MODEL = model_name
+        _active_remote_model = model_name
+        # If LM Studio, try to load the model
+        if REMOTE_BACKEND == "lmstudio":
+            load_model(model_name, boost=True)
     else:
-        LOCAL_MODEL = model_name
+        _active_local_model = model_name
+
+
+def get_active_model(boost: bool = False) -> str:
+    """Get the currently active model name."""
+    if boost:
+        if REMOTE_BACKEND == "lmstudio" and _active_remote_model == "auto":
+            loaded = get_loaded_model(boost=True)
+            return loaded or "auto"
+        return _active_remote_model
+    return _active_local_model
 

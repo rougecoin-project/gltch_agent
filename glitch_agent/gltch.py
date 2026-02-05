@@ -26,7 +26,7 @@ from commands import (
 )
 from tools import file_write, file_append, file_cat, file_ls, parse_and_execute_actions, strip_thinking, verify_suggestions
 from input import setup_readline, get_input, show_command_hints
-from llm import stream_llm, get_last_stats, list_models, set_model
+from llm import stream_llm, get_last_stats, list_models, set_model, start_lmstudio_server, get_active_model
 from emotions import get_emotion_metrics
 from gamification import add_xp, get_progress_bar, xp_menu
 
@@ -163,6 +163,21 @@ def main() -> None:
                     save_memory(mem)
                     state = "[green]ON[/green] (cloud)" if mem["openai_mode"] else "[dim]OFF[/dim]"
                     console.print(f"[green]OpenAI Mode:[/green] {state}")
+                    continue
+
+                if user == "/lms":
+                    console.print("[cyan]Starting LM Studio server...[/cyan]")
+                    if start_lmstudio_server():
+                        console.print("[green]✓ LM Studio server is running[/green]")
+                        # Show available models
+                        models = list_models(boost=True)
+                        if models and not models[0].startswith("Error"):
+                            console.print(f"[dim]Available models: {', '.join(models[:5])}{'...' if len(models) > 5 else ''}[/dim]")
+                            active = get_active_model(boost=True)
+                            console.print(f"[dim]Active model: {active}[/dim]")
+                    else:
+                        console.print("[red]✗ Failed to start LM Studio[/red]")
+                        console.print("[dim]Make sure 'lms' CLI is installed. Run: irm https://lmstudio.ai/install.ps1 | iex[/dim]")
                     continue
 
                 if user == "/clear_chat":

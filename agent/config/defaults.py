@@ -59,6 +59,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "ui": {
         "refresh_rate": 10
+    },
+    "moltlaunch": {
+        "image_path": "",
+        "website": "https://moltbook.com"
     }
 }
 

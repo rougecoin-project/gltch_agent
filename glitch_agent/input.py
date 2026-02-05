@@ -25,29 +25,65 @@ console = Console()
 HISTORY_FILE = os.path.expanduser("~/.gltch_history")
 KB_DIR = "kb"
 
-# All available commands for tab completion
-COMMANDS = [
-    "/help", "/status", "/ping", "/exit",
-    "/mode ", "/mood ", "/boost",
-    "/note ", "/notes", "/note delete ",
-    "/mission ", "/missions", "/done ",
-    "/kb ", "/kb list", "/kb read ", "/kb delete ",
-    "/search ", "/clear", "/sys", "/net",
-    "/write ", "/append ", "/cat ", "/ls",
-    "/backup", "/restore",
-]
+# All available commands for tab completion (sorted alphabetically)
+COMMANDS = sorted([
+    "/append ",
+    "/backup",
+    "/boost",
+    "/cat ",
+    "/clear_chat",
+    "/clear_notes",
+    "/exit",
+    "/help",
+    "/kb ",
+    "/kb add ",
+    "/kb delete ",
+    "/kb list",
+    "/kb read ",
+    "/lms",
+    "/load ",
+    "/ls",
+    "/mission ",
+    "/mission add ",
+    "/mission clear",
+    "/mission done ",
+    "/mission list",
+    "/mode ",
+    "/models",
+    "/mood ",
+    "/net ",
+    "/note ",
+    "/note delete ",
+    "/openai",
+    "/ping",
+    "/recall",
+    "/restore ",
+    "/search ",
+    "/status",
+    "/sys",
+    "/write ",
+    "/xp",
+])
 
 
 def show_command_hints():
-    """Show compact command reference."""
-    console.print("[dim]─── commands ───[/dim]")
-    console.print("[cyan]core:[/cyan] help status ping exit clear")
-    console.print("[cyan]mode:[/cyan] mode mood boost")
-    console.print("[cyan]data:[/cyan] note notes mission missions done")
-    console.print("[cyan]kb:[/cyan] kb list/read/delete")
-    console.print("[cyan]files:[/cyan] write append cat ls")
-    console.print("[cyan]sys:[/cyan] sys search backup restore")
-    console.print("[dim]Tab to complete, ↑↓ for history[/dim]")
+    """Show all commands alphabetically when user types /"""
+    from rich.columns import Columns
+    from rich.text import Text
+    
+    # Group commands by first letter for nice display
+    console.print("\n[bold magenta]◆ GLTCH COMMANDS[/bold magenta]")
+    console.print("[dim]─────────────────────────────────────────[/dim]")
+    
+    # Create a clean list without trailing spaces for display
+    display_cmds = [cmd.strip() for cmd in COMMANDS]
+    
+    # Show in columns
+    cmd_texts = [Text(cmd, style="cyan") for cmd in display_cmds]
+    console.print(Columns(cmd_texts, equal=True, expand=True, column_first=True))
+    
+    console.print("[dim]─────────────────────────────────────────[/dim]")
+    console.print("[dim]Tab to complete • ↑↓ history • /help for details[/dim]\n")
 
 
 class CommandCompleter:

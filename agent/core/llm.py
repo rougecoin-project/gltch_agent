@@ -21,6 +21,13 @@ from agent.personality.emotions import get_environmental_context
 # Runtime API key overrides (loaded from memory)
 _runtime_api_keys: dict = {}
 
+def encode_image(image_path: str) -> str:
+    """Encode image file to base64."""
+    import base64
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode('utf-8')
+
+
 
 def set_api_keys(keys: dict) -> None:
     """Update runtime API keys from memory."""
@@ -216,6 +223,7 @@ When NOT to use tools:
 def stream_llm(
     user_input: str,
     history: List[Dict[str, str]],
+    images: List[str] = None,
     mode: str = "operator",
     mood: str = "focused",
     boost: bool = False,
@@ -268,10 +276,44 @@ def stream_llm(
         # Prepare messages
         messages = [{"role": "system", "content": system_prompt}]
         messages.extend(history)
-        messages.append({"role": "user", "content": user_input})
+
+        # Handle multimodal input
+        if images:
+            import base64
+            
+            # OpenAI / LM Studio format
+            if backend in ("openai", "lm-studio", "remote"):
+                content_list = [{"type": "text", "text": user_input}]
+                for img in images:
+                    if img.startswith("http"):
+                        content_list.append({"type": "image_url", "image_url": {"url": img}})
+                    else:
+                        # Local file
+                        b64_img = encode_image(img)
+                        content_list.append({
+                            "type": "image_url", 
+                            "image_url": {"url": f"data:image/jpeg;base64,{b64_img}"}
+                        })
+                messages.append({"role": "user", "content": content_list})
+            else:
+                # Ollama format (user message + valid image list in 'images' field)
+                # Note: Ollama expects 'images' as a separate field in the message object
+                 user_msg = {"role": "user", "content": user_input}
+                 # Encode images
+                 encoded_images = []
+                 for img in images:
+                    if not img.startswith("http"):
+                        encoded_images.append(encode_image(img))
+                 
+                 if encoded_images:
+                     user_msg["images"] = encoded_images
+                 
+                 messages.append(user_msg)
+        else:
+            messages.append({"role": "user", "content": user_input})
         
         # Estimate prompt tokens (rough: ~4 chars per token)
-        prompt_text = system_prompt + " ".join(m.get("content", "") for m in messages)
+        prompt_text = system_prompt + " ".join(str(m.get("content", "")) for m in messages)
         est_prompt_tokens = len(prompt_text) // 4
         
         # Base payload

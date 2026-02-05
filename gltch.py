@@ -112,6 +112,7 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
     
     # Command autocomplete (alphabetically sorted)
     COMMANDS = sorted([
+        "/attach <path>",
         "/backup",
         "/boost",
         "/clear_chat",
@@ -143,6 +144,15 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                 for cmd in COMMANDS:
                     if cmd.startswith(text):
                         yield Completion(cmd, start_position=-len(text))
+        
+    # Safety confirmation prompt
+    def confirm_action_prompt(action: str, args: str) -> bool:
+        console.print(f"\n[bold yellow]⚠️  SECURITY ALERT[/bold yellow]")
+        console.print(f"GLTCH wants to perform action: [bold cyan]{action.upper()}[/bold cyan]")
+        console.print(f"Details: [dim]{args}[/dim]")
+        
+        answer = Prompt.ask("Allow this action?", choices=["y", "n"], default="n")
+        return answer.lower() == "y"
     
     prompt_style = Style.from_dict({
         '': '#00ff00',  # Default green
@@ -196,6 +206,7 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
     
     def help_menu():
         console.print(f"\n[bold magenta]💜 {AGENT_NAME} COMMANDS 💜[/bold magenta]")
+        console.print("/attach <path>                attach image for next message")
         console.print("/backup                       backup memory")
         console.print("/boost                        toggle remote GPU")
         console.print("/clear_chat                   clear chat history")
@@ -212,6 +223,9 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
         console.print("/net <off|on>                 toggle network")
         console.print("/openai                       toggle OpenAI cloud")
         console.print("/ping                         alive check")
+        console.print("/status                       show agent status")
+        console.print("/ping                         alive check")
+        console.print("/safety <on/off>              toggle safety guardrails")
         console.print("/status                       show agent status")
         console.print("/xp                           show rank & unlocks\n")
     
@@ -362,6 +376,9 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
     
     check_moltbook_heartbeat()
     
+    # Store images to send with next message
+    pending_images = []
+    
     while True:
         try:
             user = session.prompt("you: ").strip()
@@ -408,6 +425,29 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                 state = user.split(" ", 1)[1].strip().lower() == "on"
                 agent.toggle_network(state)
                 console.print(f"Network: {'[bold green]ONLINE[/bold green]' if state else '[dim]OFFLINE[/dim]'}")
+                console.print(f"Network: {'[bold green]ONLINE[/bold green]' if state else '[dim]OFFLINE[/dim]'}")
+                continue
+            
+            if user.startswith("/safety "):
+                arg = user.split(" ", 1)[1].strip().lower()
+                if arg == "on":
+                    mem["safety_enabled"] = True
+                    save_memory(mem)
+                    console.print("[green]🛡️ Safety Guardrails: ENABLED[/green]")
+                elif arg == "off":
+                    console.print("\n[bold red]⚠️  DISABLE SAFETY GUARDRAILS? ⚠️[/bold red]")
+                    console.print("[red]GLTCH will be able to execute ANY command immediately without asking.[/red]")
+                    console.print("This includes downloading files, editing system configs, and network calls.\n")
+                    
+                    code = str(int(time.time()))[-4:]
+                    confirm = Prompt.ask(f"Type '{code}' to confirm removal of safety protocols")
+                    
+                    if confirm == code:
+                        mem["safety_enabled"] = False
+                        save_memory(mem)
+                        console.print("\n[bold red]🔓 SAFETY DISABLED. GLTCH IS UNCHAINED.[/bold red]")
+                    else:
+                        console.print("[green]Safety remains ENABLED.[/green]")
                 continue
             
             if user.startswith("/mode "):
@@ -1113,12 +1153,49 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                     console.print("[dim]Install: curl -fsSL https://opencode.ai/install | bash[/dim]")
                 continue
             
+            if user.startswith("/attach "):
+                import os
+                path = user[8:].strip().strip("'").strip('"')
+                if os.path.exists(path):
+                    pending_images.append(path)
+                    console.print(f"[green]✓ Attached:[/green] {path}")
+                    console.print(f"[dim]({len(pending_images)} images ready to send)[/dim]")
+                else:
+                    console.print(f"[red]✗ File not found:[/red] {path}")
+                continue
+            
             # Not a command — route to LLM
             response_chunks = []
             prefix = f"[bold]{AGENT_NAME}[/bold]: "
             
+            # Define callback based on safety setting
+            safety_on = mem.get("safety_enabled", True)
+            
+            def confirmation_wrapper(action, args):
+                # Always allow "read", "ls", "show" without nagging? 
+                # Plan says "Safe Mode (Default): Any system action... will prompt"
+                # But typically read-only ops might be less annoying. 
+                # For strict adherence to user request: "extreme warnings... approve before that"
+                # Let's prompt for everything except maybe 'gif' or safe 'ls' if truly safe?
+                # User asked to approve "actions" generally.
+                
+                # Check if safety is disabled
+                if not mem.get("safety_enabled", True):
+                    return True
+                
+                return confirm_action_prompt(action, args)
+            
             with Live(Text.from_markup(f"{prefix}[dim]thinking...[/dim]"), console=console, refresh_per_second=10, transient=True) as live:
-                for chunk in agent.chat(user):
+                # Send with attached images and confirmation callback
+                gen = agent.chat(
+                    user, 
+                    images=pending_images,
+                    confirm_callback=confirmation_wrapper
+                )
+                # Clear images after sending
+                pending_images = []
+                
+                for chunk in gen:
                     response_chunks.append(chunk)
                     current_text = "".join(response_chunks)
                     display_text = strip_thinking(current_text)
@@ -1128,10 +1205,46 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                     elif "<think>" in current_text:
                         dots = "." * (int(time.time() * 2) % 4)
                         live.update(Text.from_markup(f"{prefix}[dim]reasoning{dots}[/dim]"))
-            
+
             # Extract thinking and response separately
             full_response = "".join(response_chunks)
             thinking_content, final_response = extract_thinking(full_response)
+            
+            # Show collapsible thinking section if there was reasoning
+            if thinking_content and len(thinking_content) > 20:
+                # Truncate thinking for display
+                think_lines = thinking_content.strip().split('\n')
+                think_preview = think_lines[0][:60] + "..." if len(think_lines[0]) > 60 else think_lines[0]
+                console.print(f"[dim]┌─ 💭 {think_preview}[/dim]")
+                if len(think_lines) > 1:
+                    console.print(f"[dim]│  ... ({len(think_lines)} lines of reasoning)[/dim]")
+                console.print(f"[dim]└─[/dim]")
+            
+            # Print final response
+            if final_response:
+                console.print(f"{prefix}{final_response}")
+
+            # Show action results from agent state
+            if agent._last_action_results:
+                console.print("\n".join(agent._last_action_results))
+            
+            # Sync to session
+            
+            # agent.chat() stores result in self._last_response and returns a dict at end of generator.
+            # To get that dict from a generator loop:
+            # Using `yield from` or catching StopIteration is tricky in a simple for-loop.
+            
+            # Alternative: modifying agent.chat to yield the ACTION RESULT as a final special chunk?
+            # Or just access agent._last_action_results (if I add it).
+            # The agent.chat() method returns a dict: { "action_results": [...] }
+            # But we are consuming it as a generator.
+            
+            # Let's look at how to get the return value.
+            # The cleaner way is to make agent.chat emit a special object or use a callback for results.
+            # Or just fetch `agent._last_stats` and maybe `agent._last_action_results`.
+            
+            # Let's add `_last_action_results` to GltchAgent to make this easy.
+
             
             # Show collapsible thinking section if there was reasoning
             if thinking_content and len(thinking_content) > 20:

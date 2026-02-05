@@ -43,6 +43,7 @@ gltch
 - 🏠 **Local-First** — Runs on Ollama by default. Your data stays on your machine.
 - ⚡ **Boost Mode** — Connect to remote LM Studio (RTX 4090) via Tailscale for power
 - ☁️ **Cloud Fallback** — OpenAI, Anthropic, Gemini support when you need it
+- 👁️ **Multimodal Vision** — "See" images using standard models (LLaVA, Gemma Vision, GPT-4o) via `/attach`
 - 🧠 **Multi-Provider** — Easily switch between local and cloud LLMs
 - 🧠 **Three Minds** — React, Reason, Reflect - metacognitive framework for authentic responses
 
@@ -166,6 +167,7 @@ Then open http://localhost:3000 for the web dashboard.
 | `/help` | `/h` | Show all commands |
 | `/status` | `/s` | Agent status, model info |
 | `/clear` | `/c` | Clear chat history |
+| `/attach` | | Attach image for visual analysis |
 | `/exit` | | Exit GLTCH |
 
 ### Models
@@ -213,6 +215,7 @@ Then open http://localhost:3000 for the web dashboard.
 |---------|-------------|
 | `/code <prompt>` | Send coding task to OpenCode |
 | `/net <on/off>` | Toggle network access |
+| `/safety <on/off>` | Toggle safety guardrails (requires confirmation) |
 | `/backup` | Backup memory |
 
 ## ⚙️ Configuration

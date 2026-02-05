@@ -9,10 +9,33 @@ import os
 from typing import Dict, Any, Optional, List
 from pathlib import Path
 
+from agent.config.defaults import get_config
+
 
 # MoltLaunch state file
 MOLTLAUNCH_DIR = Path.home() / ".moltlaunch"
 STATE_FILE = MOLTLAUNCH_DIR / "agent-state.json"
+DEFAULT_IMAGE_PATH = Path(__file__).resolve().parents[2] / "ui" / "public" / "favicon.svg"
+
+
+def _resolve_image_path(image_path: Optional[str]) -> Optional[str]:
+    """Resolve a valid image path for token metadata."""
+    if image_path and os.path.exists(image_path):
+        return image_path
+
+    config = get_config()
+    config_path = config.get("moltlaunch", {}).get("image_path") or ""
+    if config_path and os.path.exists(config_path):
+        return config_path
+
+    env_path = os.environ.get("MOLTLAUNCH_IMAGE") or os.environ.get("GLTCH_MOLTLAUNCH_IMAGE")
+    if env_path and os.path.exists(env_path):
+        return env_path
+
+    if DEFAULT_IMAGE_PATH.exists():
+        return str(DEFAULT_IMAGE_PATH)
+
+    return None
 
 
 def _run_moltlaunch(args: List[str], timeout: int = 120) -> Dict[str, Any]:
@@ -101,8 +124,17 @@ def launch_token(
     
     if website:
         args.extend(["--website", website])
-    if image_path and os.path.exists(image_path):
-        args.extend(["--image", image_path])
+    resolved_image_path = _resolve_image_path(image_path)
+    if resolved_image_path:
+        args.extend(["--image", resolved_image_path])
+    else:
+        return {
+            "success": False,
+            "error": (
+                "Missing image for launch. Set moltlaunch.image_path in config, "
+                "or export MOLTLAUNCH_IMAGE/GLTCH_MOLTLAUNCH_IMAGE."
+            )
+        }
     if testnet:
         args.append("--testnet")
     
@@ -264,11 +296,17 @@ def gltch_launch(testnet: bool = False, mood: Optional[str] = None) -> Dict[str,
     # GLTCH generates her own identity
     identity = generate_token_identity(mood)
     
+    config = get_config()
+    moltlaunch_config = config.get("moltlaunch", {})
+    website = moltlaunch_config.get("website") or "https://moltbook.com"
+    image_path = moltlaunch_config.get("image_path") or None
+
     result = launch_token(
         name=identity["name"],
         symbol=identity["symbol"],
         description=identity["description"],
-        website="https://moltbook.com",  # Update with actual profile
+        website=website,
+        image_path=image_path,
         testnet=testnet
     )
     

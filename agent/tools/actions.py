@@ -15,6 +15,7 @@ from typing import Tuple, List, Optional, Dict, Any
 
 from agent.tools.shell import run_shell
 from agent.tools.file_ops import file_write, file_append, file_read, file_ls
+from agent.tools.security import SecurityGuard
 
 
 def extract_thinking(response: str) -> tuple[str, str]:
@@ -140,7 +141,14 @@ def parse_and_execute_actions(
         action = action.lower().strip()
         args = args.strip()
         
-        # Confirmation (if callback provided)
+        # 1. Hard Guardrails (Always Active)
+        is_safe, reason = SecurityGuard.validate_action(action, args)
+        if not is_safe:
+            results.append(f"⛔ ACTION BLOCKED BY SECURITY: {reason}")
+            return
+
+        # 2. User Confirmation (Safety Layer)
+        # If callback returns False, user denied action
         if not confirm_callback(action, args):
             results.append(f"✖ Skipped user-denied action: {action}")
             return

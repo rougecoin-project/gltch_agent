@@ -11,12 +11,16 @@ LOCAL_MODEL = "phi3:3.8b"
 LOCAL_CTX = 4096 
 LOCAL_BACKEND = "ollama"
 
-# Remote LLM (LM Studio / OpenAI Compatible)
-# Set your remote IP here (e.g. 192.168.1.100)
-REMOTE_URL = "http://localhost:1234/v1/chat/completions" 
-REMOTE_MODEL = "deepseek-r1-distill-qwen-14b"
+# Remote LLM (LM Studio - NEW API)
+# LM Studio 0.3+ uses /api/v1/chat endpoint
+# Start with: lms server start
+REMOTE_URL = "http://localhost:1234/api/v1/chat" 
+REMOTE_MODEL = "auto"  # "auto" = use currently loaded model
 REMOTE_CTX = 8192
-REMOTE_BACKEND = "openai"
+REMOTE_BACKEND = "lmstudio"  # New backend type for LM Studio API
+
+# Legacy LM Studio (OpenAI-compatible, for older versions)
+LMSTUDIO_LEGACY_URL = "http://localhost:1234/v1/chat/completions"
 
 # OpenAI API (Cloud)
 # Set your OpenAI API key here or use environment variable OPENAI_API_KEY

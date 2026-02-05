@@ -1,6 +1,6 @@
 {
   "name": "gltch",
-  "version": "0.1.1",
+  "version": "0.2.0-beta",
   "description": "Local-first AI agent with personality. Runs on your machine, thinks for herself.",
   "type": "module",
   "keywords": [

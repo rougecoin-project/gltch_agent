@@ -27,6 +27,7 @@ class GltchAgent:
         self.memory = memory or load_memory()
         self._last_response: Optional[str] = None
         self._last_stats: Dict[str, Any] = {}
+        self._last_action_results: List[str] = []
         # Load API keys into LLM module
         api_keys = self.memory.get("api_keys", {})
         if api_keys:
@@ -74,15 +75,18 @@ class GltchAgent:
     def chat(
         self,
         message: str,
+        images: Optional[List[str]] = None,
         session_id: Optional[str] = None,
         channel: str = "terminal",
-        user: Optional[str] = None
+        user: Optional[str] = None,
+        confirm_callback=None
     ) -> Generator[str, None, Dict[str, Any]]:
         """
         Process a chat message and yield response chunks.
         
         Args:
             message: The user's message
+            images: Optional list of image paths or URLs
             session_id: Optional session identifier for multi-user support
             channel: The channel this message came from (terminal, discord, telegram, etc.)
             user: The user identifier
@@ -100,6 +104,7 @@ class GltchAgent:
         for chunk in stream_llm(
             message,
             history,
+            images=images,
             mode=self.mode,
             mood=self.mood,
             boost=self.memory.get("boost", False),
@@ -111,7 +116,11 @@ class GltchAgent:
             yield chunk
         
         response = "".join(response_chunks).strip()
-        cleaned_response, action_results, new_mood = parse_and_execute_actions(response, self.memory)
+        cleaned_response, action_results, new_mood = parse_and_execute_actions(
+            response, 
+            self.memory, 
+            confirm_callback=confirm_callback
+        )
         
         # Update mood if changed
         old_mood = self.mood
@@ -134,6 +143,7 @@ class GltchAgent:
         
         self._last_response = cleaned_response
         self._last_stats = stats
+        self._last_action_results = action_results
         
         # Return final result
         return {
