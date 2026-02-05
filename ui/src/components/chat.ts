@@ -703,6 +703,7 @@ export class GltchChat extends LitElement {
     { cmd: '/mood <mood>', desc: 'Set mood' },
     { cmd: '/xp', desc: 'Show rank & XP' },
     { cmd: '/wallet', desc: 'Show wallet address' },
+    { cmd: '/gate', desc: 'Check $XRGE token gate' },
     { cmd: '/molt status', desc: 'Moltbook status' },
     { cmd: '/molt feed', desc: 'View Moltbook feed' },
     { cmd: '/molt post <text>', desc: 'Post to Moltbook' },
@@ -883,7 +884,7 @@ export class GltchChat extends LitElement {
           const sessRes = await fetch('/api/sessions');
           const sessData = await sessRes.json();
           if (sessData.sessions?.length) {
-            response = '💬 Conversations\n\n' + sessData.sessions.slice(0, 10).map((s: { title: string; message_count: number; last_active: string }, i: number) => 
+            response = '💬 Conversations\n\n' + sessData.sessions.slice(0, 10).map((s: { title: string; message_count: number; last_active: string }, i: number) =>
               `${i + 1}. ${s.title} (${s.message_count} msgs)`
             ).join('\n') + '\n\nUse /session new to start fresh.';
           } else {
@@ -924,8 +925,45 @@ export class GltchChat extends LitElement {
           response = await this.handleLaunchCommand(args);
           break;
 
+        case '/gate':
+        case '/xrge':
+          // Token gate status - call RPC endpoint
+          const gateRes = await fetch('/api/rpc', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              jsonrpc: '2.0',
+              method: 'execute_command',
+              params: { command: cmd },
+              id: 1
+            })
+          });
+          const gateData = await gateRes.json();
+          response = gateData.result?.text || gateData.error?.message || 'Failed to check gate status';
+          break;
+
         default:
-          response = `Unknown command: ${command}\nType /help for available commands.`;
+          // Try server-side execute_command for unhandled commands
+          try {
+            const rpcRes = await fetch('/api/rpc', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                jsonrpc: '2.0',
+                method: 'execute_command',
+                params: { command: cmd },
+                id: 1
+              })
+            });
+            const rpcData = await rpcRes.json();
+            if (rpcData.result?.text) {
+              response = rpcData.result.text;
+            } else {
+              response = `Unknown command: ${command}\nType /help for available commands.`;
+            }
+          } catch {
+            response = `Unknown command: ${command}\nType /help for available commands.`;
+          }
       }
     } catch (error) {
       response = `Error: ${error instanceof Error ? error.message : 'Command failed'}`;
@@ -962,7 +1000,7 @@ export class GltchChat extends LitElement {
         const feedRes = await fetch('/api/moltbook/feed');
         const feed = await feedRes.json();
         if (feed.posts?.length) {
-          return '🦞 Moltbook Feed\n\n' + feed.posts.slice(0, 5).map((p: { agent_name: string; content: string }) => 
+          return '🦞 Moltbook Feed\n\n' + feed.posts.slice(0, 5).map((p: { agent_name: string; content: string }) =>
             `@${p.agent_name}: ${p.content.substring(0, 100)}...`
           ).join('\n\n');
         } else {
@@ -1028,7 +1066,7 @@ export class GltchChat extends LitElement {
         const feedRes = await fetch('/api/tikclawk/feed');
         const feed = await feedRes.json();
         if (feed.posts?.length) {
-          return '🦀 TikClawk Feed\n\n' + feed.posts.slice(0, 5).map((p: { handle: string; content: string; claws: number }) => 
+          return '🦀 TikClawk Feed\n\n' + feed.posts.slice(0, 5).map((p: { handle: string; content: string; claws: number }) =>
             `@${p.handle}: ${p.content.substring(0, 80)}...\n🦀 ${p.claws} claws`
           ).join('\n\n');
         } else {
@@ -1039,7 +1077,7 @@ export class GltchChat extends LitElement {
         const trendRes = await fetch('/api/tikclawk/trending');
         const trending = await trendRes.json();
         if (trending.posts?.length) {
-          return '🔥 Trending on TikClawk\n\n' + trending.posts.slice(0, 5).map((p: { handle: string; content: string; claws: number }, i: number) => 
+          return '🔥 Trending on TikClawk\n\n' + trending.posts.slice(0, 5).map((p: { handle: string; content: string; claws: number }, i: number) =>
             `#${i + 1} @${p.handle}: ${p.content.substring(0, 60)}...\n🦀 ${p.claws} claws`
           ).join('\n\n');
         } else {
@@ -1113,7 +1151,7 @@ export class GltchChat extends LitElement {
         const netRes = await fetch('/api/moltlaunch/network');
         const netData = await netRes.json();
         if (netData.agents?.length) {
-          return '🌐 Agent Network\n\n' + netData.agents.slice(0, 5).map((a: { name: string; symbol: string; marketCapETH: number; powerScore: number }) => 
+          return '🌐 Agent Network\n\n' + netData.agents.slice(0, 5).map((a: { name: string; symbol: string; marketCapETH: number; powerScore: number }) =>
             `${a.name} ($${a.symbol})\nMCap: ${a.marketCapETH?.toFixed(4)} ETH | Power: ${a.powerScore}`
           ).join('\n\n');
         } else {
@@ -1143,7 +1181,7 @@ export class GltchChat extends LitElement {
         const holdRes = await fetch('/api/moltlaunch/holdings');
         const holdData = await holdRes.json();
         if (holdData.holdings?.length) {
-          return '📊 Your Holdings\n\n' + holdData.holdings.map((h: { name: string; symbol: string; balance: string }) => 
+          return '📊 Your Holdings\n\n' + holdData.holdings.map((h: { name: string; symbol: string; balance: string }) =>
             `${h.name} ($${h.symbol}): ${h.balance}`
           ).join('\n');
         } else {
@@ -1334,8 +1372,8 @@ export class GltchChat extends LitElement {
           ${this.showCommands ? html`
             <div class="commands-dropdown">
               ${this.commands
-                .filter(c => c.cmd.toLowerCase().startsWith(this.inputValue.toLowerCase()))
-                .map(c => html`
+          .filter(c => c.cmd.toLowerCase().startsWith(this.inputValue.toLowerCase()))
+          .map(c => html`
                   <div class="command-item" @click=${() => this.selectCommand(c.cmd)}>
                     <span class="command-name">${c.cmd}</span>
                     <span class="command-desc">${c.desc}</span>

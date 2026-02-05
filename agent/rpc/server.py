@@ -94,6 +94,8 @@ class RPCServer:
             "heartbeat_run": self._handle_heartbeat_run,
             # Wallet send
             "send_wallet": self._handle_send_wallet,
+            # Slash command execution (for UI parity)
+            "execute_command": self._handle_execute_command,
         }
     
     def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -930,6 +932,114 @@ class RPCServer:
         
         return send_transaction(to_address, amount)
     
+    # --- Execute Command (UI Parity) ---
+    
+    def _handle_execute_command(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Execute a slash command from the UI.
+        Parses command string and routes to appropriate handler.
+        Returns a text response for display in chat.
+        """
+        command = params.get("command", "").strip()
+        
+        if not command:
+            return {"success": False, "error": "No command provided", "text": ""}
+        
+        if not command.startswith("/"):
+            return {"success": False, "error": "Not a command (must start with /)", "text": ""}
+        
+        # Parse command and args
+        parts = command[1:].split(" ", 1)  # Remove leading /
+        cmd = parts[0].lower()
+        args = parts[1] if len(parts) > 1 else ""
+        
+        try:
+            # Route to handlers
+            if cmd == "help":
+                text = """**Available Commands:**
+• `/wallet` - Wallet status
+• `/gate` - Check $XRGE token access
+• `/molt` - Moltbook status
+• `/status` - Agent status
+• `/mode <name>` - Set mode (operator, cyberpunk, loyal, unhinged)
+• `/mood <name>` - Set mood"""
+                return {"success": True, "text": text, "type": "command"}
+            
+            elif cmd == "wallet":
+                result = self._handle_get_wallet({})
+                if result.get("address"):
+                    text = f"""**💎 Wallet Status**
+• Address: `{result['address']}`
+• Network: BASE
+• Has Key: {"✓" if result.get('has_private_key') else "✗"}"""
+                else:
+                    text = "**💎 Wallet Status**\n• No wallet configured. Use the Wallet tab to generate one."
+                return {"success": True, "text": text, "type": "command"}
+            
+            elif cmd == "gate" or cmd == "xrge":
+                from agent.tools.token_gate import get_token_balance
+                from agent.config.settings import XRGE_CONTRACT, XRGE_GATE_THRESHOLD
+                
+                wallet = self.agent.memory.get("wallet", {}).get("address", "")
+                if not wallet:
+                    text = "**🔒 Token Gate**\nNo wallet connected."
+                else:
+                    balance = get_token_balance(wallet)
+                    status = "✓ ACCESS GRANTED" if balance >= XRGE_GATE_THRESHOLD else "✗ ACCESS DENIED"
+                    text = f"""**🔒 Token Gate Status**
+• Wallet: `{wallet[:10]}...{wallet[-4:]}`
+• Balance: {balance:,.2f} XRGE
+• Required: {XRGE_GATE_THRESHOLD:,.2f} XRGE
+• Status: {status}"""
+                return {"success": True, "text": text, "type": "command"}
+            
+            elif cmd == "molt":
+                result = self._handle_molt_status({})
+                if result.get("connected"):
+                    text = f"""**🦞 Moltbook Status**
+• Connected: ✓
+• Name: {result.get('name', 'Unknown')}
+• Karma: {result.get('karma', 0)}
+• Followers: {result.get('followers', 0)}"""
+                else:
+                    text = "**🦞 Moltbook Status**\nNot registered on Moltbook."
+                return {"success": True, "text": text, "type": "command"}
+            
+            elif cmd == "status":
+                result = self._handle_status({})
+                text = f"""**📊 Agent Status**
+• Mode: {result.get('mode', 'operator')}
+• Mood: {result.get('mood', 'neutral')}
+• Level: {result.get('level', 1)}
+• XP: {result.get('xp', 0)}"""
+                return {"success": True, "text": text, "type": "command"}
+            
+            elif cmd == "mode" and args:
+                result = self._handle_set_mode({"mode": args.strip()})
+                if result.get("success"):
+                    text = f"**Mode Changed**\nNow in **{args.strip()}** mode."
+                else:
+                    text = f"**Mode Change Failed**\n{result.get('error', 'Unknown error')}"
+                return {"success": result.get("success", False), "text": text, "type": "command"}
+            
+            elif cmd == "mood" and args:
+                result = self._handle_set_mood({"mood": args.strip()})
+                if result.get("mood"):
+                    text = f"**Mood Changed**\nFeeling **{args.strip()}** now."
+                else:
+                    text = f"**Mood Change Failed**\nInvalid mood."
+                return {"success": True, "text": text, "type": "command"}
+            
+            else:
+                return {
+                    "success": False, 
+                    "text": f"Unknown command: `/{cmd}`. Try `/help` for available commands.",
+                    "type": "error"
+                }
+                
+        except Exception as e:
+            return {"success": False, "text": f"Error executing command: {str(e)}", "type": "error"}
+    
     # --- Server Modes ---
     
     def run_stdio(self):
@@ -965,8 +1075,8 @@ class RPCServer:
             ("GET", "/api/moltbook/status"): ("molt_status", {}),
             ("GET", "/api/moltbook/feed"): ("molt_feed", {}),
             ("GET", "/api/moltbook/profile"): ("molt_profile", {}),
-            ("GET", "/api/wallet"): ("wallet_status", {}),
-            ("GET", "/api/wallet/export"): ("wallet_export", {}),
+            ("GET", "/api/wallet"): ("get_wallet", {}),
+            ("GET", "/api/wallet/export"): ("export_wallet", {}),
             ("GET", "/api/heartbeat/list"): ("heartbeat_list", {}),
             ("GET", "/api/moltlaunch/status"): ("moltlaunch_status", {}),
             ("GET", "/api/moltlaunch/network"): ("moltlaunch_network", {}),
@@ -975,12 +1085,12 @@ class RPCServer:
             ("GET", "/api/tikclawk/trending"): ("tikclawk_trending", {}),
             ("GET", "/health"): ("ping", {}),
             # POST endpoints (without body)
-            ("POST", "/api/wallet/generate"): ("wallet_generate", {}),
+            ("POST", "/api/wallet/generate"): ("generate_wallet", {}),
             ("POST", "/api/toggle/boost"): ("toggle_boost", {}),
             ("POST", "/api/toggle/openai"): ("toggle_openai", {}),
             ("POST", "/api/toggle/network"): ("toggle_network", {"enabled": True}),
             # DELETE endpoints
-            ("DELETE", "/api/wallet"): ("wallet_delete", {}),
+            ("DELETE", "/api/wallet"): ("delete_wallet", {}),
             ("DELETE", "/api/sessions"): ("clear_session", {}),
         }
         
@@ -1117,6 +1227,19 @@ class RPCServer:
                         response = server.handle_request(request)
                         self._send_json(response.get("result", response.get("error", {})))
                         return
+                
+                # Explicit JSON-RPC endpoint (for UI slash commands)
+                if path == "/api/rpc":
+                    try:
+                        rpc_request = json.loads(body)
+                        if "method" in rpc_request:
+                            response = server.handle_request(rpc_request)
+                            self._send_json(response)
+                            return
+                    except:
+                        pass
+                    self._send_json({"error": "Invalid JSON-RPC request"}, 400)
+                    return
                 
                 # Fallback: try as JSON-RPC
                 try:
