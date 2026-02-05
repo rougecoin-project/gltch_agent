@@ -1131,8 +1131,11 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                             console.print(f"  [cyan]{p}[/cyan]")
                         continue
                 
-                console.print(f"[cyan]→ Routing to OpenCode...[/cyan]")
-                result, project_name = quick_code(code_prompt, project=project)
+                from rich.status import Status
+                
+                with Status("[cyan]⚡ OpenCode generating code...[/cyan]", spinner="dots", console=console) as status:
+                    result, project_name = quick_code(code_prompt, project=project)
+                
                 console.print(f"\n[bold]OpenCode[/bold]:\n{result}")
                 if project_name:
                     console.print(f"\n[dim]Project folder: workspace/{project_name}/[/dim]")
@@ -1181,15 +1184,20 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                 if not mem.get("safety_enabled", True):
                     return True
                 
-                # Pause the live display so the prompt is visible
+                # Pause live display for user input
                 if live_display:
+                    live_display.update("")  # Clear content to prevent duplication
                     live_display.stop()
                 
-                result = confirm_action_prompt(action, args)
+                console.print(f"\n[bold yellow]⚠️  SECURITY ALERT[/bold yellow]")
+                console.print(f"GLTCH wants to perform action: [bold cyan]{action.upper()}[/bold cyan]")
+                console.print(f"Details: [dim]{args}[/dim]")
                 
-                # Resume the live display
-                if live_display:
-                    live_display.start()
+                answer = Prompt.ask("Allow this action?", choices=["y", "n"], default="n")
+                result = answer.lower() == "y"
+                
+                # Don't restart live - it causes duplication when the Live context
+                # commits its content on stop and then re-renders on start
                 
                 return result
             
@@ -1220,18 +1228,11 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
             full_response = "".join(response_chunks)
             thinking_content, final_response = extract_thinking(full_response)
             
-            # Show collapsible thinking section if there was reasoning
-            if thinking_content and len(thinking_content) > 20:
-                # Truncate thinking for display
-                think_lines = thinking_content.strip().split('\n')
-                think_preview = think_lines[0][:60] + "..." if len(think_lines[0]) > 60 else think_lines[0]
-                console.print(f"[dim]┌─ 💭 {think_preview}[/dim]")
-                if len(think_lines) > 1:
-                    console.print(f"[dim]│  ... ({len(think_lines)} lines of reasoning)[/dim]")
-                console.print(f"[dim]└─[/dim]")
+            # Thinking display removed - Live context already shows the full response
+            # The transient=True means Live output gets cleared, but we don't need
+            # to re-print anything since the final state was already visible.
             
-            # Print final response
-            # Print final response
+            # Print final response (removed - already shown by Live)
             # if final_response:
             #    console.print(f"{prefix}{final_response}")
 

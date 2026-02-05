@@ -63,7 +63,7 @@ export class AgentBridge {
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
-      const data = await response.json();
+      const data = await response.json() as RPCResponse;
       this.connected = true;
       return data;
     } catch (error) {

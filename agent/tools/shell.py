@@ -4,7 +4,59 @@ Execute shell commands with safety guards.
 """
 
 import subprocess
+import sys
+import shutil
 from typing import Tuple
+
+# Platform detection
+IS_WINDOWS = sys.platform == 'win32'
+IS_MAC = sys.platform == 'darwin'
+IS_LINUX = sys.platform.startswith('linux')
+
+# WSL detection (cached)
+_wsl_available = None
+
+def is_wsl_available() -> bool:
+    """Check if WSL is available on Windows."""
+    global _wsl_available
+    if _wsl_available is not None:
+        return _wsl_available
+    
+    if not IS_WINDOWS:
+        _wsl_available = False
+        return False
+    
+    # Check if wsl.exe exists
+    _wsl_available = shutil.which('wsl') is not None
+    return _wsl_available
+
+# Linux-only commands that should be routed through WSL on Windows
+LINUX_COMMANDS = [
+    'nmap', 'sudo', 'apt', 'apt-get', 'yum', 'dnf', 'pacman',
+    'systemctl', 'journalctl', 'dmesg', 'ip', 'ifconfig',
+    'grep', 'awk', 'sed', 'cat', 'ls', 'chmod', 'chown',
+    'find', 'locate', 'which', 'whereis', 'whoami',
+    'ps', 'kill', 'killall', 'htop', 'free', 'df',
+    'tar', 'gzip', 'gunzip', 'unzip', 'curl', 'wget',
+    'ssh', 'scp', 'rsync', 'nc', 'netcat', 'tcpdump',
+    'traceroute', 'dig', 'nslookup', 'host'
+]
+
+def should_use_wsl(cmd: str) -> bool:
+    """Check if a command should be routed through WSL."""
+    if not IS_WINDOWS or not is_wsl_available():
+        return False
+    
+    cmd_parts = cmd.strip().split()
+    if not cmd_parts:
+        return False
+    
+    first_cmd = cmd_parts[0].lower()
+    # Handle sudo prefix
+    if first_cmd == 'sudo' and len(cmd_parts) > 1:
+        first_cmd = cmd_parts[1].lower()
+    
+    return first_cmd in LINUX_COMMANDS
 
 
 # Dangerous commands blocklist
@@ -76,6 +128,12 @@ def run_shell(cmd: str, timeout: int = 60, stream: bool = False) -> Tuple[bool, 
     dangerous, reason = is_dangerous(cmd)
     if dangerous:
         return False, f"⚠ Blocked dangerous command: {reason}"
+    
+    # WSL routing for Linux commands on Windows
+    use_wsl = should_use_wsl(cmd)
+    if use_wsl:
+        # Route through WSL
+        cmd = f'wsl -e bash -c "{cmd}"'
     
     try:
         if stream or is_long_running(cmd):

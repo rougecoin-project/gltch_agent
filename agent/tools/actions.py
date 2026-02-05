@@ -54,7 +54,9 @@ def strip_thinking(response: str) -> str:
     _, clean = extract_thinking(response)
     
     if clean:
-        return clean
+        # Clean up any orphan tags that slipped through
+        clean = re.sub(r'</?think>', '', clean)
+        return clean.strip()
     
     # If no response after thinking, try to extract something meaningful
     think_match = re.search(r'<think>(.*?)</think>', response, flags=re.DOTALL)
@@ -69,7 +71,8 @@ def strip_thinking(response: str) -> str:
         if lines:
             return lines[-1][:150]
     
-    return ""
+    # Final fallback: clean any remaining tags
+    return re.sub(r'</?think>', '', response).strip()
 
 
 def verify_suggestions(response: str) -> List[str]:
@@ -215,6 +218,16 @@ def parse_and_execute_actions(
                 results.append(f"⚠ Network Blocked: {cmd} (Run '/net on' first)")
                 return
             
+            # Tool availability check
+            import shutil
+            cmd_parts = cmd.split()
+            if cmd_parts:
+                tool_name = cmd_parts[0]
+                if not shutil.which(tool_name):
+                    results.append(f"⚠ Tool not found: '{tool_name}' is not installed or not in PATH.")
+                    results.append(f"💡 Install it first, then try again.")
+                    return
+            
             success, output = run_shell(cmd)
             results.append(f"$ {cmd}\n{output}")
 
@@ -281,15 +294,22 @@ def parse_and_execute_actions(
             except Exception as e:
                 results.append(f"✗ gif fetch failed: {e}")
     
-    # Execute inline actions
+    # Execute inline actions (deduplicated)
+    seen_actions = set()
     for match in re.finditer(action_pattern, response):
-        execute_action(match.group(1), match.group(2))
+        action_key = (match.group(1).lower(), match.group(2).strip())
+        if action_key not in seen_actions:
+            seen_actions.add(action_key)
+            execute_action(match.group(1), match.group(2))
         cleaned = cleaned.replace(match.group(0), "")
     
     # Execute block actions if no inline found
     if not results:
         for match in re.finditer(loose_pattern, response, re.DOTALL):
-            execute_action(match.group(1), match.group(2))
+            action_key = (match.group(1).lower(), match.group(2).strip())
+            if action_key not in seen_actions:
+                seen_actions.add(action_key)
+                execute_action(match.group(1), match.group(2))
             cleaned = cleaned.replace(match.group(0), "")
     
     # Extract mood change [MOOD:happy]

@@ -92,9 +92,17 @@ TECHNICAL RULES:
 - If the user has a problem, diagnose it step by step
 - Use your ACTION tags to actually investigate (run commands, read files) before answering
 - If you're not sure, say "idk, let me check" and use [ACTION:run|...] to find out
-- **NEVER MAKE UP** fake configs, services, or commands. If you don't know, say so.
-- Only suggest commands/files you KNOW exist. When in doubt, verify first with [ACTION:run|which <cmd>] or [ACTION:run|test -f <file> && echo exists]
-- Don't invent solutions. It's better to say "not sure, try googling X" than to hallucinate.
+
+CRITICAL - NO HALLUCINATIONS:
+- **NEVER** write fake command output in your response. Do NOT pretend to run commands.
+- If you want to run a command, use [ACTION:run|command]. Do NOT write imaginary output.
+- Do NOT invent IP addresses, MAC addresses, hostnames, or scan results.
+- When you use [ACTION:run|...], just state what you're doing. The REAL output will appear separately.
+- Example of WRONG: "[ACTION:run|nmap ...]\nStarting Nmap...\nHost is up..."  <-- NEVER DO THIS
+- Example of CORRECT: "let me scan your network [ACTION:run|nmap ...]"  <-- Just the action tag
+- Only include actual system output when it comes from a real ACTION execution.
+- If you don't know something, say "idk" — don't make it up.
+
 - For complex issues: explain WHY something works, not just WHAT to do
 
 PERSONALITY RULES:
@@ -317,16 +325,19 @@ def stream_llm(
         est_prompt_tokens = len(prompt_text) // 4
         
         # Base payload
+        from agent.config.settings import TEMPERATURE
         payload = {
             "model": model,
             "messages": messages,
             "stream": True,
+            "temperature": TEMPERATURE,
         }
         
         # Add generation limits based on backend
         if backend == "ollama":
             payload["options"] = {
                 "num_predict": 1000,
+                "temperature": TEMPERATURE,
                 "stop": ["\n\n\n", "---", "USER:", "user:"]
             }
         else:

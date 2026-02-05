@@ -34,6 +34,9 @@ OPENCODE_PASSWORD = os.environ.get("OPENCODE_SERVER_PASSWORD", "")
 # Network Timeout
 TIMEOUT = int(os.environ.get("GLTCH_TIMEOUT", "120"))
 
+# LLM Temperature (lower = more deterministic, less hallucination)
+TEMPERATURE = float(os.environ.get("GLTCH_TEMPERATURE", "0.4"))
+
 # UI Settings
 REFRESH_RATE = 10
 
