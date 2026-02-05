@@ -18,6 +18,29 @@ export class GltchHeader extends LitElement {
       gap: 30px;
     }
 
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-right: 10px;
+    }
+
+    .logo img {
+      height: 36px;
+      width: auto;
+      border-radius: 4px;
+    }
+
+    .logo-text {
+      font-size: 18px;
+      font-weight: 700;
+      background: linear-gradient(135deg, #00ffcc 0%, #ff00ff 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      letter-spacing: 2px;
+    }
+
     .stat {
       display: flex;
       flex-direction: column;
@@ -217,11 +240,16 @@ export class GltchHeader extends LitElement {
   }
 
   render() {
-    const contextPct = this.stats.contextMax ? 
+    const contextPct = this.stats.contextMax ?
       Math.round(((this.stats.contextMax - this.stats.contextUsed) / this.stats.contextMax) * 100) : 100;
     const contextClass = contextPct < 20 ? 'red' : contextPct < 50 ? '' : 'green';
 
     return html`
+      <div class="logo">
+        <img src="/gltch-logo.png" alt="GLTCH" onerror="this.style.display='none'">
+        <span class="logo-text">GLTCH</span>
+      </div>
+
       <div class="stat">
         <span class="stat-label">model</span>
         <span class="stat-value">${this.stats.model}</span>
