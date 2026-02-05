@@ -79,3 +79,20 @@ MEMORY_FILE = os.path.join(DATA_DIR, "memory.json")
 SESSIONS_DIR = os.path.join(DATA_DIR, "sessions")
 KB_DIR = os.path.join(DATA_DIR, "kb")
 CONFIG_FILE = os.path.join(DATA_DIR, "config.json")
+
+# Sandboxed Mode - restricts shell commands and file access
+SANDBOXED_MODE = os.environ.get("GLTCH_SANDBOXED", "false").lower() == "true"
+
+# Allowed commands in sandboxed mode (whitelist)
+SANDBOX_ALLOWED_COMMANDS = [
+    "ls", "dir", "cat", "head", "tail", "echo", "pwd", "date", "whoami",
+    "python", "pip", "node", "npm", "git", "curl", "wget",
+    "grep", "find", "which", "env", "printenv"
+]
+
+# Blocked patterns in sandboxed mode (always blocked even if command is allowed)
+SANDBOX_BLOCKED_PATTERNS = [
+    "rm -rf", "del /s", "format", "mkfs", "dd if=", ":(){ :|:& };:",
+    "> /dev/", "chmod 777", "sudo", "su -", "passwd", "shutdown", "reboot"
+]
+

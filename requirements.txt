@@ -7,6 +7,10 @@ prompt_toolkit>=3.0.0
 
 # Wallet
 eth-account>=0.11.0
+web3>=6.0.0
+
+# Browser Automation (optional)
+playwright>=1.40.0
 
 # Development (optional)
 pytest>=7.0.0

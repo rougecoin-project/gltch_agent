@@ -99,6 +99,8 @@ class RPCServer:
             # Token balances
             "get_balances": self._handle_get_balances,
             "send_token": self._handle_send_token,
+            # Browser automation
+            "browse": self._handle_browse,
         }
     
     def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -1095,6 +1097,27 @@ class RPCServer:
             return send_transaction(to_address, amount)
         
         return send_token(to_address, amount, token)
+    
+    def _handle_browse(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Browse URL and extract content."""
+        from agent.tools.browser import browse_url, take_screenshot, extract_data
+        
+        url = params.get("url", "").strip()
+        action = params.get("action", "browse")  # browse, screenshot, extract
+        selector = params.get("selector", "")
+        
+        if not url:
+            return {"success": False, "error": "URL required"}
+        
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        
+        if action == "screenshot":
+            return take_screenshot(url)
+        elif action == "extract" and selector:
+            return extract_data(url, selector)
+        else:
+            return browse_url(url)
     
     def run_stdio(self):
         """Run in stdio mode (read JSON-RPC from stdin, write to stdout)."""
