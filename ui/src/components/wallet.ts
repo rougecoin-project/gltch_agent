@@ -303,6 +303,12 @@ export class GltchWallet extends LitElement {
   @state() private hasPrivateKey = false;
   @state() private showPrivateKey = false;
   @state() private generatedKey = '';
+  @state() private balances: Record<string, number> = {};
+  @state() private loadingBalances = false;
+  @state() private sendToken = 'ETH';
+  @state() private sendTo = '';
+  @state() private sendAmount = '';
+  @state() private sending = false;
 
   connectedCallback() {
     super.connectedCallback();
@@ -324,7 +330,7 @@ export class GltchWallet extends LitElement {
 
   private async saveWallet() {
     const address = this.inputAddress.trim();
-    
+
     // Basic validation
     if (!address) {
       this.showMessage('Please enter a wallet address', 'error');
@@ -432,7 +438,7 @@ export class GltchWallet extends LitElement {
 
   private async importWallet() {
     const privateKey = this.inputAddress.trim();
-    
+
     if (!privateKey) {
       this.showMessage('Please enter a private key', 'error');
       return;
@@ -483,6 +489,57 @@ export class GltchWallet extends LitElement {
   private formatAddress(addr: string): string {
     if (!addr) return '';
     return `${addr.slice(0, 6)}...${addr.slice(-4)}`;
+  }
+
+  private async loadBalances() {
+    if (!this.walletAddress) return;
+    this.loadingBalances = true;
+    try {
+      const res = await fetch('/api/balances');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && data.balances) {
+          this.balances = data.balances;
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load balances:', error);
+    } finally {
+      this.loadingBalances = false;
+    }
+  }
+
+  private async sendTokens() {
+    if (!this.sendTo || !this.sendAmount || !this.sendToken) {
+      this.showMessage('Please fill in all send fields', 'error');
+      return;
+    }
+
+    this.sending = true;
+    try {
+      const res = await fetch('/api/token/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          to_address: this.sendTo,
+          amount: parseFloat(this.sendAmount),
+          token: this.sendToken
+        })
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.showMessage(`Sent ${this.sendAmount} ${this.sendToken}! TX: ${data.tx_hash?.slice(0, 10)}...`, 'success');
+        this.sendTo = '';
+        this.sendAmount = '';
+        this.loadBalances();
+      } else {
+        this.showMessage(data.error || 'Send failed', 'error');
+      }
+    } catch (error) {
+      this.showMessage('Failed to send tokens', 'error');
+    } finally {
+      this.sending = false;
+    }
   }
 
   private copyAddress() {
@@ -604,26 +661,74 @@ export class GltchWallet extends LitElement {
 
         ${this.walletAddress ? html`
           <div class="section">
-            <div class="section-title">◆ Wallet Features</div>
+            <div class="section-title" style="display: flex; justify-content: space-between; align-items: center;">
+              <span>◆ Token Balances</span>
+              <button style="padding: 6px 12px; font-size: 10px;" @click=${this.loadBalances} ?disabled=${this.loadingBalances}>
+                ${this.loadingBalances ? '...' : '↻ refresh'}
+              </button>
+            </div>
             <div class="stats-grid">
               <div class="stat-card">
-                <div class="stat-value blue">◈</div>
-                <div class="stat-label">Receive Tips</div>
+                <div class="stat-value" style="color: #627eea;">${(this.balances['ETH'] || 0).toFixed(6)}</div>
+                <div class="stat-label">ETH</div>
               </div>
               <div class="stat-card">
-                <div class="stat-value blue">⚡</div>
-                <div class="stat-label">Low Fees</div>
+                <div class="stat-value" style="color: var(--neon-magenta);">${(this.balances['XRGE'] || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                <div class="stat-label">XRGE</div>
               </div>
               <div class="stat-card">
-                <div class="stat-value blue">🔒</div>
-                <div class="stat-label">Self-Custody</div>
+                <div class="stat-value" style="color: #2775ca;">${(this.balances['USDC'] || 0).toFixed(2)}</div>
+                <div class="stat-label">USDC</div>
               </div>
               <div class="stat-card">
-                <div class="stat-value blue">🌐</div>
-                <div class="stat-label">On-Chain</div>
+                <div class="stat-value" style="color: var(--neon-green);">${(this.balances['KTA'] || 0).toLocaleString(undefined, { maximumFractionDigits: 2 })}</div>
+                <div class="stat-label">KTA</div>
               </div>
             </div>
           </div>
+
+          ${this.hasPrivateKey ? html`
+            <div class="section">
+              <div class="section-title">◆ Send Tokens</div>
+              <div class="form-group">
+                <label class="form-label">Token</label>
+                <select 
+                  style="width: 100%; padding: 12px; background: var(--bg-primary); border: 1px solid var(--border); color: var(--text-primary); border-radius: 4px;"
+                  .value=${this.sendToken}
+                  @change=${(e: Event) => this.sendToken = (e.target as HTMLSelectElement).value}
+                >
+                  <option value="ETH">ETH</option>
+                  <option value="XRGE">XRGE</option>
+                  <option value="USDC">USDC</option>
+                  <option value="KTA">KTA</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Recipient Address</label>
+                <input 
+                  type="text"
+                  placeholder="0x..."
+                  .value=${this.sendTo}
+                  @input=${(e: Event) => this.sendTo = (e.target as HTMLInputElement).value}
+                />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Amount</label>
+                <input 
+                  type="number"
+                  step="0.000001"
+                  placeholder="0.0"
+                  .value=${this.sendAmount}
+                  @input=${(e: Event) => this.sendAmount = (e.target as HTMLInputElement).value}
+                />
+              </div>
+              <div class="button-row">
+                <button class="primary" @click=${this.sendTokens} ?disabled=${this.sending}>
+                  ${this.sending ? 'sending...' : `⚡ send ${this.sendToken}`}
+                </button>
+              </div>
+            </div>
+          ` : ''}
         ` : ''}
       </div>
     `;

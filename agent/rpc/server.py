@@ -96,6 +96,9 @@ class RPCServer:
             "send_wallet": self._handle_send_wallet,
             # Slash command execution (for UI parity)
             "execute_command": self._handle_execute_command,
+            # Token balances
+            "get_balances": self._handle_get_balances,
+            "send_token": self._handle_send_token,
         }
     
     def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -1042,6 +1045,57 @@ class RPCServer:
     
     # --- Server Modes ---
     
+    # --- Token Balance & Send Methods ---
+    
+    def _handle_get_balances(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Get all token balances for the wallet."""
+        from agent.tools.tokens import get_all_balances
+        from agent.tools.wallet import load_wallet, has_wallet
+        
+        # Get wallet address
+        wallet_address = None
+        if has_wallet():
+            wallet = load_wallet()
+            if wallet:
+                wallet_address = wallet.get("address")
+        
+        if not wallet_address:
+            wallet_data = self.agent.memory.get("wallet", {})
+            wallet_address = wallet_data.get("address")
+        
+        if not wallet_address:
+            return {"success": False, "error": "No wallet configured", "balances": {}}
+        
+        return get_all_balances(wallet_address)
+    
+    def _handle_send_token(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Send ERC-20 tokens."""
+        from agent.tools.tokens import send_token
+        
+        to_address = params.get("to_address", "").strip()
+        amount = params.get("amount", 0)
+        token = params.get("token", "").upper()
+        
+        if not to_address:
+            return {"success": False, "error": "to_address required"}
+        
+        if not token:
+            return {"success": False, "error": "token required (ETH, XRGE, USDC, KTA)"}
+        
+        try:
+            amount = float(amount)
+            if amount <= 0:
+                return {"success": False, "error": "Amount must be positive"}
+        except (ValueError, TypeError):
+            return {"success": False, "error": "Invalid amount"}
+        
+        # For ETH, use existing send_wallet
+        if token == "ETH":
+            from agent.tools.wallet import send_transaction
+            return send_transaction(to_address, amount)
+        
+        return send_token(to_address, amount, token)
+    
     def run_stdio(self):
         """Run in stdio mode (read JSON-RPC from stdin, write to stdout)."""
         print('{"jsonrpc":"2.0","result":{"status":"ready","agent":"GLTCH"},"id":null}', flush=True)
@@ -1083,9 +1137,11 @@ class RPCServer:
             ("GET", "/api/tikclawk/status"): ("tikclawk_status", {}),
             ("GET", "/api/tikclawk/feed"): ("tikclawk_feed", {}),
             ("GET", "/api/tikclawk/trending"): ("tikclawk_trending", {}),
+            ("GET", "/api/balances"): ("get_balances", {}),
             ("GET", "/health"): ("ping", {}),
             # POST endpoints (without body)
             ("POST", "/api/wallet/generate"): ("generate_wallet", {}),
+            ("POST", "/api/token/send"): ("send_token", {}),
             ("POST", "/api/toggle/boost"): ("toggle_boost", {}),
             ("POST", "/api/toggle/openai"): ("toggle_openai", {}),
             ("POST", "/api/toggle/network"): ("toggle_network", {"enabled": True}),

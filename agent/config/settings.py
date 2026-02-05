@@ -35,8 +35,20 @@ OPENAI_CTX = 128000
 
 # Token Gating (Base / XRGE)
 BASE_RPC_URL = os.environ.get("GLTCH_BASE_RPC", "https://mainnet.base.org")
-XRGE_CONTRACT = os.environ.get("XRGE_CONTRACT_ADDRESS", "0x147120faEC9277ec02d957584CFCD92B56A24317") # Replace with real contract
+XRGE_CONTRACT = os.environ.get("XRGE_CONTRACT_ADDRESS", "0x147120faEC9277ec02d957584CFCD92B56A24317")
 XRGE_GATE_THRESHOLD = float(os.environ.get("GLTCH_GATE_THRESHOLD", "1000"))
+
+# Additional Token Contracts (Base)
+USDC_CONTRACT = os.environ.get("USDC_CONTRACT_ADDRESS", "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913")
+KTA_CONTRACT = os.environ.get("KTA_CONTRACT_ADDRESS", "0xc0634090F2Fe6c6d75e61Be2b949464aBB498973")
+
+# Token Decimals (for formatting)
+TOKEN_DECIMALS = {
+    "ETH": 18,
+    "XRGE": 18,
+    "USDC": 6,
+    "KTA": 18,  # Adjust if different
+}
 
 
 # OpenCode Integration (coding agent)
