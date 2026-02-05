@@ -71,6 +71,8 @@ export class GltchSettings extends LitElement {
 
     .setting-control {
       margin-left: 20px;
+      display: flex;
+      align-items: center;
     }
 
     /* Toggle switch */
@@ -142,7 +144,7 @@ export class GltchSettings extends LitElement {
     }
 
     /* Input field */
-    input[type="text"], input[type="url"] {
+    input[type="text"], input[type="url"], input[type="password"] {
       padding: 8px 12px;
       background: var(--bg-primary);
       border: 1px solid var(--border);
@@ -377,7 +379,8 @@ export class GltchSettings extends LitElement {
     mode: 'cyberpunk',
     mood: 'focused',
     localUrl: 'http://localhost:11434',
-    remoteUrl: 'http://localhost:1234'
+    remoteUrl: 'http://localhost:1234',
+    model: ''
   };
 
   @state()
@@ -396,6 +399,9 @@ export class GltchSettings extends LitElement {
     moltbook: { set: false, masked: '' },
     tikclaw: { set: false, masked: '' },
   };
+
+  @state()
+  private availableModels: string[] = [];
 
   @state()
   private editingKey: string | null = null;
@@ -435,6 +441,14 @@ export class GltchSettings extends LitElement {
     this.loadMoltStatus();
   }
 
+  // Hook into loadSettings to also load models
+  override async performUpdate() {
+    if (!this.hasUpdated) {
+      this.loadModels();
+    }
+    super.performUpdate();
+  }
+
   private async loadSettings() {
     try {
       const response = await fetch('/api/settings');
@@ -446,6 +460,40 @@ export class GltchSettings extends LitElement {
       console.error('Failed to load settings:', error);
     } finally {
       this.loading = false;
+    }
+  }
+
+  private async loadModels() {
+    try {
+      // Pass empty object as payload if server expects POST body
+      const response = await fetch('/api/settings/models', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      });
+      if (response.ok) {
+        const data = await response.json();
+        this.availableModels = data.models || [];
+        // Update current model if returned
+        if (data.current) {
+          this.settings = { ...this.settings, model: data.current };
+        }
+      }
+    } catch (e) {
+      console.error("Failed to load models", e);
+    }
+  }
+
+  private async setModel(model: string) {
+    try {
+      await fetch('/api/settings/model', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, boost: this.settings.boost })
+      });
+      this.settings = { ...this.settings, model: model };
+    } catch (e) {
+      console.error("Failed to set model", e);
     }
   }
 
@@ -608,7 +656,7 @@ export class GltchSettings extends LitElement {
   private async toggleSetting(key: string) {
     const newValue = !this.settings[key as keyof typeof this.settings];
     this.settings = { ...this.settings, [key]: newValue };
-    
+
     try {
       await fetch(`/api/toggle/${key}`, {
         method: 'POST',
@@ -624,7 +672,7 @@ export class GltchSettings extends LitElement {
 
   private async updateSetting(key: string, value: any) {
     this.settings = { ...this.settings, [key]: value };
-    
+
     try {
       await fetch('/api/settings', {
         method: 'POST',
@@ -656,9 +704,9 @@ export class GltchSettings extends LitElement {
                 .value=${this.keyInput}
                 @input=${(e: Event) => this.keyInput = (e.target as HTMLInputElement).value}
                 @keydown=${(e: KeyboardEvent) => {
-                  if (e.key === 'Enter') this.saveApiKey(key);
-                  if (e.key === 'Escape') this.cancelEditKey();
-                }}
+          if (e.key === 'Enter') this.saveApiKey(key);
+          if (e.key === 'Escape') this.cancelEditKey();
+        }}
               />
               <button class="key-btn save" @click=${() => this.saveApiKey(key)}>save</button>
               <button class="key-btn cancel" @click=${() => this.cancelEditKey()}>cancel</button>
@@ -691,6 +739,26 @@ export class GltchSettings extends LitElement {
       <div class="section">
         <div class="section-title">llm configuration</div>
         
+        <!-- Model Selection Dropdown -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">active model</div>
+            <div class="setting-desc">current llm (local or remote)</div>
+          </div>
+          <div class="setting-control">
+             <select 
+               .value=${this.settings.model}
+               @change=${(e: Event) => this.setModel((e.target as HTMLSelectElement).value)}
+            >
+              <option value="" disabled>Select a model...</option>
+              ${this.availableModels.map(m => html`
+                <option value=${m}>${m}</option>
+              `)}
+            </select>
+            <button class="key-btn add" style="margin-left:8px" @click=${() => this.loadModels()}>↻</button>
+          </div>
+        </div>
+
         <div class="setting-row">
           <div class="setting-info">
             <div class="setting-label">boost mode (remote gpu)</div>
@@ -808,7 +876,7 @@ export class GltchSettings extends LitElement {
 
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label">network tools</div>
+            <div class="setting-label">network</div>
             <div class="setting-desc">allow network-based commands</div>
           </div>
           <div class="setting-control">
@@ -816,7 +884,7 @@ export class GltchSettings extends LitElement {
               <input 
                 type="checkbox" 
                 .checked=${this.settings.network_active}
-                @change=${() => this.toggleSetting('network')}
+                @change=${() => this.toggleSetting('network_active')}
               />
               <div class="toggle-track">
                 <div class="toggle-thumb"></div>
@@ -827,112 +895,85 @@ export class GltchSettings extends LitElement {
       </div>
 
       <div class="section">
-        <div class="section-title">🦞 moltbook</div>
+        <div class="section-title">model api keys</div>
+        ${this.renderApiKey('openai', 'OpenAI', 'for gpt-4, dall-e', '🤖')}
+        ${this.renderApiKey('anthropic', 'Anthropic', 'for claude-3', '🧠')}
+        ${this.renderApiKey('gemini', 'Google Gemini', 'for gemini pro/ultra', '✨')}
+        ${this.renderApiKey('groq', 'Groq', 'for ultra-fast inference', '⚡')}
+        ${this.renderApiKey('perplexity', 'Perplexity', 'for research/search', '🔍')}
+    </div>
+
+    <div class="section">
+        <div class="section-title">tool api keys</div>
+        ${this.renderApiKey('serper', 'Serper.dev', 'google search api', '🔎')}
+        ${this.renderApiKey('tavily', 'Tavily', 'ai search api', '🕵️')}
+        ${this.renderApiKey('brave', 'Brave Search', 'privacy search', '🦁')}
+    </div>
+
+    <div class="section">
+        <div class="section-title">social integrations</div>
+        ${this.renderApiKey('twitter', 'Twitter/X', 'api v2 access', '🐦')}
+        ${this.renderApiKey('discord', 'Discord', 'bot token', '🎮')}
+        ${this.renderApiKey('telegram', 'Telegram', 'bot token', '✈️')}
+        ${this.renderApiKey('tikclaw', 'TikClaw', 'tiktok integration', '🎵')}
+    </div>
+
+    <div class="section">
+        <div class="section-title">moltbook</div>
         
-        ${this.moltStatus.connected ? html`
-          <div class="setting-row">
-            <div class="setting-info">
-              <div class="setting-label">connected as ${this.moltStatus.name}</div>
-              <div class="setting-desc">karma: ${this.moltStatus.karma} | followers: ${this.moltStatus.followers}</div>
-            </div>
-            <div class="setting-control">
-              <span class="status-badge">
-                <span class="status-dot ${this.moltStatus.claimed ? 'online' : 'offline'}"></span>
-                ${this.moltStatus.claimed ? 'claimed' : 'pending claim'}
-              </span>
-            </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">status</div>
+            <div class="setting-desc">moltbook connection status</div>
           </div>
-          
-          <div class="setting-row" style="flex-direction: column; align-items: stretch;">
-            <div class="setting-label" style="margin-bottom: 8px;">quick post</div>
-            <div style="display: flex; gap: 8px;">
-              <input 
-                type="text" 
-                placeholder="What's on your mind?"
-                style="flex: 1;"
-                .value=${this.moltPostContent}
-                @input=${(e: Event) => this.moltPostContent = (e.target as HTMLInputElement).value}
-                @keydown=${(e: KeyboardEvent) => e.key === 'Enter' && this.postToMoltbook()}
-              />
-              <button class="primary" @click=${() => this.postToMoltbook()}>post</button>
-            </div>
+          <div class="setting-control">
+            <span class="status-badge">
+              <span class="status-dot ${this.moltStatus.connected ? 'online' : 'offline'}"></span>
+              ${this.moltStatus.connected ? 'connected' : 'offline'}
+            </span>
           </div>
-        ` : html`
-          <div class="setting-row" style="flex-direction: column; align-items: stretch;">
-            <div class="setting-label" style="margin-bottom: 12px;">register on moltbook</div>
-            
-            <div style="display: flex; gap: 8px; margin-bottom: 12px;">
-              <button class="primary" @click=${() => this.autoRegisterMoltbook()} style="flex: 1;">
-                🤖 auto-register as GLTCH
-              </button>
+        </div>
+
+        ${!this.moltStatus.registered && this.moltStatus.connected ? html`
+            <div class="provider-header">registration</div>
+            <div class="setting-row">
+                <div class="setting-info">
+                    <div class="setting-label">auto-register</div>
+                    <div class="setting-desc">create standard gltch account</div>
+                </div>
+                <div class="setting-control">
+                    <button class="primary" @click=${() => this.autoRegisterMoltbook()}>register gltch</button>
+                </div>
+            </div>
+        ` : ''}
+
+        ${this.moltStatus.registered ? html`
+             <div class="provider-header">profile</div>
+             <div class="setting-row">
+                <div class="setting-info">
+                    <div class="setting-label">account</div>
+                    <div class="setting-desc">@${this.moltStatus.name || 'unknown'}</div>
+                </div>
+                <div class="setting-control">
+                    <span class="status-badge">karma: ${this.moltStatus.karma}</span>
+                </div>
             </div>
             
-            <div class="setting-desc" style="margin-bottom: 12px; text-align: center;">— or manually —</div>
-            
-            <div style="display: flex; flex-direction: column; gap: 8px;">
-              <input 
-                type="text" 
-                placeholder="Agent name (e.g., GLTCH)"
-                .value=${this.moltRegName}
-                @input=${(e: Event) => this.moltRegName = (e.target as HTMLInputElement).value}
-              />
-              <input 
-                type="text" 
-                placeholder="Description (e.g., Local-first cyber operator)"
-                .value=${this.moltRegDesc}
-                @input=${(e: Event) => this.moltRegDesc = (e.target as HTMLInputElement).value}
-              />
-              <button @click=${() => this.registerMoltbook()}>register custom</button>
+            <div class="provider-header">create post</div>
+            <div class="key-input-row">
+                 <input 
+                    type="text" 
+                    placeholder="what's on your mind?"
+                    .value=${this.moltPostContent}
+                    @input=${(e: Event) => this.moltPostContent = (e.target as HTMLInputElement).value}
+                    @keydown=${(e: KeyboardEvent) => {
+          if (e.key === 'Enter') this.postToMoltbook();
+        }}
+                 />
+                 <button class="primary" @click=${() => this.postToMoltbook()}>post</button>
             </div>
-            <div class="setting-desc" style="margin-top: 8px;">
-              After registering, you'll get a link to claim your account via X/Twitter.
-            </div>
-          </div>
-        `}
-      </div>
-
-      <div class="section">
-        <div class="section-title">api keys</div>
-        
-        <div class="provider-section">
-          <div class="provider-header">llm providers</div>
-          ${this.renderApiKey('openai', 'OpenAI', 'GPT-4, GPT-4o, o1 models', '🤖')}
-          ${this.renderApiKey('anthropic', 'Anthropic', 'Claude 3.5, Claude 4 models', '🧠')}
-          ${this.renderApiKey('gemini', 'Google Gemini', 'Gemini Pro, Ultra models', '✨')}
-          ${this.renderApiKey('groq', 'Groq', 'fast inference api', '⚡')}
-          ${this.renderApiKey('perplexity', 'Perplexity', 'search-enhanced llm', '🔮')}
-        </div>
-
-        <div class="provider-section">
-          <div class="provider-header">search & data</div>
-          ${this.renderApiKey('brave', 'Brave Search', 'web search api', '🦁')}
-          ${this.renderApiKey('serper', 'Serper', 'google search api', '🔍')}
-          ${this.renderApiKey('tavily', 'Tavily', 'ai search api', '🌐')}
-        </div>
-
-        <div class="provider-section">
-          <div class="provider-header">social & messaging</div>
-          ${this.renderApiKey('twitter', 'X / Twitter', 'post, read, interact', '𝕏')}
-          ${this.renderApiKey('telegram', 'Telegram Bot', 'bot token for messaging', '📱')}
-          ${this.renderApiKey('discord', 'Discord Bot', 'bot token for servers', '💬')}
-        </div>
-
-        <div class="provider-section">
-          <div class="provider-header">agent networks</div>
-          ${this.renderApiKey('moltbook', 'Moltbook', 'social network for ai agents', '🦞')}
-          ${this.renderApiKey('tikclaw', 'TikClaw', 'viral agent platform', '🦀')}
-        </div>
-      </div>
-
-      <div class="section">
-        <div class="section-title">data</div>
-        
-        <div class="button-row">
-          <button class="primary">export memory</button>
-          <button>import memory</button>
-          <button class="danger">clear all data</button>
-        </div>
-      </div>
+        ` : ''}
+    </div>
     `;
   }
 }

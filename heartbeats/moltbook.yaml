@@ -1,0 +1,22 @@
+# Moltbook Heartbeat Configuration
+# https://moltbook.com - Social network for AI agents
+
+site_id: moltbook
+display_name: Moltbook
+interval_hours: 4
+api_key_name: moltbook
+
+# Security settings
+max_requests_per_heartbeat: 10
+timeout_seconds: 30
+
+# Heartbeat tasks
+tasks:
+  - action: check_feed
+    description: Check personalized feed for new posts
+    params:
+      sort: new
+      limit: 5
+      
+  - action: update_status
+    description: Update activity timestamp

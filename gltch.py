@@ -114,40 +114,80 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
         console.print(GLTCH_BANNER)
         console.print(f"\n{random.choice(TAGLINES)}\n")
     
-    # Command autocomplete (alphabetically sorted)
-    COMMANDS = sorted([
-        "/attach <path>",
-        "/backup",
-        "/boost",
-        "/clear_chat",
-        "/code ",
-        "/exit",
-        "/help",
-        "/load ",
-        "/mode cyberpunk", "/mode loyal", "/mode operator", "/mode unhinged",
-        "/model",
-        "/molt", "/molt register ", "/molt post ", "/molt feed", "/molt profile",
-        "/molt search ", "/molt comment ", "/molt upvote ", "/molt heartbeat",
-        "/mood affectionate", "/mood calm", "/mood feral", "/mood focused",
-        "/net off", "/net on",
-        "/openai",
-        "/ping",
-        "/status",
-        "/wallet", "/wallet generate", "/wallet export", "/wallet delete", "/wallet import ",
-        "/claw", "/claw register", "/claw post ", "/claw feed", "/claw trending",
-        "/sessions", "/session new", "/session ", "/session rename ",
-        "/launch", "/launch token", "/launch network", "/launch fees", "/launch claim",
-        "/launch holdings", "/launch buy ", "/launch sell ",
-        "/xp",
-    ])
+    # Hierarchical command autocomplete
+    COMMAND_TREE = {
+        # Core commands (no subcommands)
+        "/help": None,
+        "/status": None,
+        "/ping": None,
+        "/exit": None,
+        "/backup": None,
+        "/clear_chat": None,
+        "/xp": None,
+        "/boost": None,
+        "/openai": None,
+        "/model": None,
+        "/attach": ["<path>"],
+        "/load": ["<model>"],
+        
+        # Mode & Mood
+        "/mode": ["cyberpunk", "loyal", "operator", "unhinged"],
+        "/mood": ["affectionate", "calm", "feral", "focused"],
+        "/net": ["on", "off"],
+        "/safety": ["on", "off"],
+        
+        # Code
+        "/code": ["undo", "redo", "models", "model", "agents", "agent", "share", "compact", "config", "sessions", "init", "<prompt>"],
+        
+        # Heartbeat
+        "/heartbeat": ["list", "run", "all"],
+        
+        # Wallet
+        "/wallet": ["status", "generate", "send", "export", "import", "delete"],
+        
+        # Sessions
+        "/sessions": None,
+        "/session": ["new", "rename", "<num>"],
+        
+        # Social
+        "/molt": ["register", "post", "feed", "profile", "search", "comment", "upvote", "heartbeat"],
+        "/claw": ["register", "post", "feed", "trending"],
+        
+        # Launch
+        "/launch": ["token", "network", "fees", "claim", "holdings", "buy", "sell"],
+    }
     
     class CommandCompleter(Completer):
         def get_completions(self, document, complete_event):
-            text = document.text
-            if text.startswith("/"):
-                for cmd in COMMANDS:
+            text = document.text.strip()
+            
+            if not text.startswith("/"):
+                return
+            
+            parts = text.split(" ", 1)
+            base_cmd = parts[0]
+            
+            # If just "/" or partial base command, show top-level commands
+            if len(parts) == 1:
+                for cmd in sorted(COMMAND_TREE.keys()):
                     if cmd.startswith(text):
-                        yield Completion(cmd, start_position=-len(text))
+                        # Show command with hint if it has subcommands
+                        subs = COMMAND_TREE[cmd]
+                        if subs:
+                            display = f"{cmd}  →"
+                        else:
+                            display = cmd
+                        yield Completion(cmd, start_position=-len(text), display=display)
+            
+            # If we have a base command with space, show subcommands
+            elif base_cmd in COMMAND_TREE:
+                subs = COMMAND_TREE[base_cmd]
+                if subs:
+                    partial = parts[1] if len(parts) > 1 else ""
+                    for sub in subs:
+                        full_cmd = f"{base_cmd} {sub}"
+                        if sub.startswith(partial) or not partial:
+                            yield Completion(full_cmd, start_position=-len(text), display=f"  {sub}")
         
     # Safety confirmation prompt
     def confirm_action_prompt(action: str, args: str) -> bool:
@@ -210,28 +250,47 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
     
     def help_menu():
         console.print(f"\n[bold magenta]💜 {AGENT_NAME} COMMANDS 💜[/bold magenta]")
-        console.print("/attach <path>                attach image for next message")
-        console.print("/backup                       backup memory")
-        console.print("/boost                        toggle remote GPU")
-        console.print("/clear_chat                   clear chat history")
-        console.print("/code                         show OpenCode status & projects")
-        console.print("/code <prompt>                new coding project")
-        console.print("/code @<project> <prompt>     continue existing project")
-        console.print("/exit                         quit")
+        
+        console.print("\n[bold cyan]📌 Core[/bold cyan]")
         console.print("/help                         show commands")
-        console.print("/load <model>                 switch model directly")
+        console.print("/status                       show agent status")
+        console.print("/ping                         alive check")
+        console.print("/exit                         quit")
+        
+        console.print("\n[bold cyan]🤖 Agent[/bold cyan]")
         console.print("/mode <cyberpunk|loyal|operator|unhinged>")
-        console.print("/model                        select from available models")
-        console.print("/molt                         Moltbook social network")
         console.print("/mood <affectionate|calm|feral|focused>")
-        console.print("/net <off|on>                 toggle network")
+        console.print("/model                        select from available models")
+        console.print("/load <model>                 switch model directly")
+        console.print("/boost                        toggle remote GPU")
         console.print("/openai                       toggle OpenAI cloud")
-        console.print("/ping                         alive check")
-        console.print("/status                       show agent status")
-        console.print("/ping                         alive check")
         console.print("/safety <on/off>              toggle safety guardrails")
-        console.print("/status                       show agent status")
-        console.print("/xp                           show rank & unlocks\n")
+        console.print("/net <off|on>                 toggle network")
+        
+        console.print("\n[bold cyan]💻 Code[/bold cyan]")
+        console.print("/code                         OpenCode commands (undo/redo/models/agents...)")
+        console.print("/attach <path>                attach image for next message")
+        
+        console.print("\n[bold cyan]💓 Heartbeat[/bold cyan]")
+        console.print("/heartbeat                    heartbeat commands (list/run/add...)")
+        
+        console.print("\n[bold cyan]🦞 Social[/bold cyan]")
+        console.print("/molt                         Moltbook commands (post/feed/profile...)")
+        console.print("/claw                         TikClawk commands (post/trending...)")
+        
+        console.print("\n[bold cyan]💎 Wallet[/bold cyan]")
+        console.print("/wallet                       wallet commands (send/generate/export...)")
+        
+        console.print("\n[bold cyan]🚀 Launch[/bold cyan]")
+        console.print("/launch                       MoltLaunch commands (mint/swap/fees...)")
+        
+        console.print("\n[bold cyan]💬 Sessions[/bold cyan]")
+        console.print("/sessions                     session commands (new/switch/list...)")
+        
+        console.print("\n[bold cyan]📊 Progress[/bold cyan]")
+        console.print("/xp                           show rank & unlocks")
+        console.print("/backup                       backup memory")
+        console.print("/clear_chat                   clear chat history\n")
     
     def check_ollama():
         """Check if Ollama is running and model is available."""
@@ -365,20 +424,23 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
     
     banner(mem)
     
-    # Check for Moltbook heartbeat reminder
-    def check_moltbook_heartbeat():
+    # Check for pending heartbeats (multi-site)
+    def check_pending_heartbeats():
         try:
-            from agent.tools.moltbook import is_configured, should_heartbeat, get_heartbeat_state
-            if is_configured() and should_heartbeat():
-                state = get_heartbeat_state()
-                last = state.get("last_check")
-                if last:
-                    console.print(f"\n[dim]🦞 Moltbook: It's been a while since your last check-in.[/dim]")
-                    console.print(f"[dim]   Run /molt heartbeat or /molt feed to stay active.[/dim]\n")
+            from agent.tools.heartbeat import HeartbeatManager
+            manager = HeartbeatManager()
+            manager.load_configs()
+            pending = manager.get_pending_sites()
+            
+            if pending:
+                site_names = [manager.get_config(s).display_name for s in pending[:3]]
+                sites_str = ", ".join(site_names)
+                console.print(f"\n[dim]💓 Heartbeat due: {sites_str}[/dim]")
+                console.print(f"[dim]   Run /heartbeat list or /heartbeat run <site>[/dim]\n")
         except Exception:
             pass
     
-    check_moltbook_heartbeat()
+    check_pending_heartbeats()
     
     # Store images to send with next message
     pending_images = []
@@ -396,6 +458,87 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
             
             if user == "/help":
                 help_menu()
+                continue
+            
+            # === HEARTBEAT COMMANDS (multi-site) ===
+            if user.startswith("/heartbeat"):
+                from agent.tools.heartbeat import HeartbeatManager
+                manager = HeartbeatManager()
+                
+                hb_args = user[10:].strip()
+                
+                # /heartbeat alone → show submenu
+                if not hb_args:
+                    console.print("\n[bold magenta]💓 HEARTBEAT COMMANDS 💓[/bold magenta]")
+                    
+                    pending = manager.get_pending_sites()
+                    if pending:
+                        console.print(f"[yellow]● {len(pending)} site(s) due for heartbeat[/yellow]")
+                    else:
+                        console.print("[green]● All heartbeats up-to-date[/green]")
+                    
+                    console.print("\n[bold cyan]📋 Status[/bold cyan]")
+                    console.print("  /heartbeat list             show all sites & status")
+                    
+                    console.print("\n[bold cyan]▶️  Actions[/bold cyan]")
+                    console.print("  /heartbeat run <site>       run heartbeat for site")
+                    console.print("  /heartbeat all              run all pending heartbeats")
+                    continue
+                
+                # /heartbeat list
+                if hb_args == "list":
+                    sites = manager.list_sites()
+                    
+                    if not sites:
+                        console.print("[dim]No heartbeat configs found. Add .yaml files to heartbeats/[/dim]")
+                    else:
+                        console.print("\n[bold magenta]💓 HEARTBEAT STATUS[/bold magenta]\n")
+                        for site in sites:
+                            status_icon = "[green]●[/green]" if not site["should_run"] else "[yellow]○[/yellow]"
+                            enabled = "" if site["enabled"] else " [dim](disabled)[/dim]"
+                            last = site.get("last_heartbeat", "never")[:16] if site.get("last_heartbeat") else "never"
+                            console.print(f"  {status_icon} [cyan]{site['site_id']}[/cyan] - {site['display_name']}{enabled}")
+                            console.print(f"      [dim]Interval: {site['interval_hours']}h | Last: {last}[/dim]")
+                    continue
+                
+                # /heartbeat run <site>
+                if hb_args.startswith("run "):
+                    site_id = hb_args[4:].strip()
+                    if not site_id:
+                        console.print("[dim]Usage: /heartbeat run <site_id>[/dim]")
+                        continue
+                    
+                    manager.load_configs()
+                    
+                    console.print(f"[cyan]Running heartbeat for {site_id}...[/cyan]")
+                    result = manager.run_heartbeat(site_id, force=True)
+                    
+                    if result.get("success"):
+                        console.print(f"[green]✓ Heartbeat complete[/green]")
+                        console.print(f"  Tasks run: {result.get('tasks_run', 0)}")
+                        console.print(f"  Succeeded: {result.get('tasks_succeeded', 0)}")
+                    else:
+                        console.print(f"[red]✗ Heartbeat failed[/red]")
+                        for err in result.get("errors", []):
+                            console.print(f"  [dim]{err}[/dim]")
+                    continue
+                
+                # /heartbeat all
+                if hb_args == "all":
+                    pending = manager.get_pending_sites()
+                    if not pending:
+                        console.print("[dim]No heartbeats pending[/dim]")
+                        continue
+                    console.print(f"[cyan]Running {len(pending)} heartbeats...[/cyan]")
+                    for site_id in pending:
+                        result = manager.run_heartbeat(site_id, force=True)
+                        status = "[green]✓[/green]" if result.get("success") else "[red]✗[/red]"
+                        console.print(f"  {status} {site_id}")
+                    continue
+                
+                # Unknown
+                console.print(f"[yellow]Unknown: /heartbeat {hb_args}[/yellow]")
+                console.print("[dim]Type /heartbeat for available commands[/dim]")
                 continue
             
             if user == "/status":
@@ -537,93 +680,173 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                 continue
             
             # Wallet commands
-            if user == "/wallet" or user == "/wallet status":
-                from agent.tools.wallet import has_wallet, get_wallet_address, format_address
-                if has_wallet():
-                    addr = get_wallet_address()
-                    console.print(f"\n[bold blue]💎 BASE Wallet[/bold blue]")
-                    console.print(f"   Address: [cyan]{addr}[/cyan]")
-                    console.print(f"   Short: [dim]{format_address(addr)}[/dim]")
-                    console.print(f"   Network: [blue]BASE (L2)[/blue]")
-                    console.print(f"   Explorer: [link=https://basescan.org/address/{addr}]basescan.org ↗[/link]")
-                else:
-                    console.print("[dim]No wallet configured. Use /wallet generate to create one.[/dim]")
-                continue
-            
-            if user == "/wallet generate":
-                from agent.tools.wallet import generate_wallet, save_wallet, has_wallet
-                if has_wallet():
-                    console.print("[yellow]Wallet already exists. Use /wallet delete first.[/yellow]")
+            if user.startswith("/wallet"):
+                from agent.tools.wallet import (
+                    has_wallet, get_wallet_address, format_address,
+                    generate_wallet, save_wallet, export_wallet, delete_wallet,
+                    import_wallet, send_transaction, validate_address
+                )
+                
+                wallet_args = user[7:].strip()
+                
+                # /wallet alone → show submenu
+                if not wallet_args:
+                    console.print("\n[bold blue]💎 WALLET COMMANDS 💎[/bold blue]")
+                    
+                    if has_wallet():
+                        addr = get_wallet_address()
+                        console.print(f"[green]● Wallet active[/green]: [cyan]{format_address(addr)}[/cyan]")
+                    else:
+                        console.print("[dim]○ No wallet configured[/dim]")
+                    
+                    console.print("\n[bold cyan]📊 Status[/bold cyan]")
+                    console.print("  /wallet status              view wallet details")
+                    
+                    console.print("\n[bold cyan]🔧 Setup[/bold cyan]")
+                    console.print("  /wallet generate            create new wallet")
+                    console.print("  /wallet import <key>        import existing wallet")
+                    console.print("  /wallet delete              delete wallet")
+                    
+                    console.print("\n[bold cyan]💸 Transactions[/bold cyan]")
+                    console.print("  /wallet send <addr> <amt>   send ETH on BASE")
+                    console.print("  /wallet export              show private key")
                     continue
-                try:
-                    console.print("[dim]Generating new BASE wallet...[/dim]")
-                    wallet = generate_wallet()
-                    save_wallet(wallet)
-                    mem["wallet"] = {"address": wallet["address"], "network": "base"}
-                    save_memory(mem)
-                    console.print(f"\n[bold green]✓ Wallet Generated![/bold green]")
-                    console.print(f"\n[bold blue]Address:[/bold blue] [cyan]{wallet['address']}[/cyan]")
-                    console.print(f"\n[bold red]⚠️  PRIVATE KEY (SAVE THIS!):[/bold red]")
-                    console.print(f"[yellow]{wallet['private_key']}[/yellow]")
-                    console.print(f"\n[red]This key will NOT be shown again. Save it somewhere secure![/red]")
-                except ImportError:
-                    console.print("[red]eth-account not installed. Run: pip install eth-account[/red]")
-                except Exception as e:
-                    console.print(f"[red]Failed to generate wallet: {e}[/red]")
-                continue
-            
-            if user == "/wallet export":
-                from agent.tools.wallet import export_wallet, has_wallet
-                if not has_wallet():
-                    console.print("[dim]No wallet found.[/dim]")
+                
+                # /wallet status
+                if wallet_args == "status":
+                    if has_wallet():
+                        addr = get_wallet_address()
+                        console.print(f"\n[bold blue]💎 BASE Wallet[/bold blue]")
+                        console.print(f"   Address: [cyan]{addr}[/cyan]")
+                        console.print(f"   Short: [dim]{format_address(addr)}[/dim]")
+                        console.print(f"   Network: [blue]BASE (L2)[/blue]")
+                        console.print(f"   Explorer: [link=https://basescan.org/address/{addr}]basescan.org ↗[/link]")
+                    else:
+                        console.print("[dim]No wallet configured. Use /wallet generate to create one.[/dim]")
                     continue
-                wallet = export_wallet()
-                if wallet:
-                    console.print(f"\n[bold red]⚠️  PRIVATE KEY:[/bold red]")
-                    console.print(f"[yellow]{wallet['private_key']}[/yellow]")
-                    console.print(f"\n[dim]Keep this safe![/dim]")
-                continue
-            
-            if user == "/wallet delete":
-                from agent.tools.wallet import delete_wallet, has_wallet
-                if not has_wallet():
-                    console.print("[dim]No wallet to delete.[/dim]")
-                    continue
-                confirm = Prompt.ask("[red]Delete wallet and private key?[/red]", choices=["y", "n"], default="n")
-                if confirm == "y":
-                    delete_wallet()
-                    if "wallet" in mem:
-                        del mem["wallet"]
+                
+                # /wallet generate
+                if wallet_args == "generate":
+                    if has_wallet():
+                        console.print("[yellow]Wallet already exists. Use /wallet delete first.[/yellow]")
+                        continue
+                    try:
+                        console.print("[dim]Generating new BASE wallet...[/dim]")
+                        wallet = generate_wallet()
+                        save_wallet(wallet)
+                        mem["wallet"] = {"address": wallet["address"], "network": "base"}
                         save_memory(mem)
-                    console.print("[green]Wallet deleted.[/green]")
-                else:
-                    console.print("[dim]Cancelled.[/dim]")
-                continue
-            
-            if user.startswith("/wallet import "):
-                from agent.tools.wallet import import_wallet, has_wallet, delete_wallet
-                private_key = user[15:].strip()
-                if not private_key:
-                    console.print("[dim]Usage: /wallet import <private_key>[/dim]")
+                        console.print(f"\n[bold green]✓ Wallet Generated![/bold green]")
+                        console.print(f"\n[bold blue]Address:[/bold blue] [cyan]{wallet['address']}[/cyan]")
+                        console.print(f"\n[bold red]⚠️  PRIVATE KEY (SAVE THIS!):[/bold red]")
+                        console.print(f"[yellow]{wallet['private_key']}[/yellow]")
+                        console.print(f"\n[red]This key will NOT be shown again. Save it somewhere secure![/red]")
+                    except ImportError:
+                        console.print("[red]eth-account not installed. Run: pip install eth-account[/red]")
+                    except Exception as e:
+                        console.print(f"[red]Failed to generate wallet: {e}[/red]")
                     continue
-                if has_wallet():
-                    confirm = Prompt.ask("[yellow]Replace existing wallet?[/yellow]", choices=["y", "n"], default="n")
+                
+                # /wallet export
+                if wallet_args == "export":
+                    if not has_wallet():
+                        console.print("[dim]No wallet found.[/dim]")
+                        continue
+                    wallet = export_wallet()
+                    if wallet:
+                        console.print(f"\n[bold red]⚠️  PRIVATE KEY:[/bold red]")
+                        console.print(f"[yellow]{wallet['private_key']}[/yellow]")
+                        console.print(f"\n[dim]Keep this safe![/dim]")
+                    continue
+                
+                # /wallet delete
+                if wallet_args == "delete":
+                    if not has_wallet():
+                        console.print("[dim]No wallet to delete.[/dim]")
+                        continue
+                    confirm = Prompt.ask("[red]Delete wallet and private key?[/red]", choices=["y", "n"], default="n")
+                    if confirm == "y":
+                        delete_wallet()
+                        if "wallet" in mem:
+                            del mem["wallet"]
+                            save_memory(mem)
+                        console.print("[green]Wallet deleted.[/green]")
+                    else:
+                        console.print("[dim]Cancelled.[/dim]")
+                    continue
+                
+                # /wallet import <key>
+                if wallet_args.startswith("import "):
+                    private_key = wallet_args[7:].strip()
+                    if not private_key:
+                        console.print("[dim]Usage: /wallet import <private_key>[/dim]")
+                        continue
+                    if has_wallet():
+                        confirm = Prompt.ask("[yellow]Replace existing wallet?[/yellow]", choices=["y", "n"], default="n")
+                        if confirm != "y":
+                            console.print("[dim]Cancelled.[/dim]")
+                            continue
+                        delete_wallet()
+                    try:
+                        wallet = import_wallet(private_key)
+                        mem["wallet"] = {"address": wallet["address"], "network": "base"}
+                        save_memory(mem)
+                        console.print(f"\n[bold green]✓ Wallet Imported![/bold green]")
+                        console.print(f"[bold blue]Address:[/bold blue] [cyan]{wallet['address']}[/cyan]")
+                    except ValueError as e:
+                        console.print(f"[red]{e}[/red]")
+                    except ImportError:
+                        console.print("[red]eth-account not installed. Run: pip install eth-account[/red]")
+                    except Exception as e:
+                        console.print(f"[red]Failed to import wallet: {e}[/red]")
+                    continue
+                
+                # /wallet send <address> <amount>
+                if wallet_args.startswith("send "):
+                    if not has_wallet():
+                        console.print("[dim]No wallet found. Use /wallet generate first.[/dim]")
+                        continue
+                    
+                    parts = wallet_args[5:].strip().split()
+                    if len(parts) < 2:
+                        console.print("[dim]Usage: /wallet send <address> <amount_eth>[/dim]")
+                        continue
+                    
+                    to_address = parts[0]
+                    try:
+                        amount = float(parts[1])
+                    except ValueError:
+                        console.print("[red]Invalid amount. Use a number like 0.01[/red]")
+                        continue
+                    
+                    if not validate_address(to_address):
+                        console.print("[red]Invalid recipient address[/red]")
+                        continue
+                    
+                    console.print(f"\n[bold yellow]⚠️  CONFIRM TRANSACTION[/bold yellow]")
+                    console.print(f"  To: [cyan]{to_address}[/cyan]")
+                    console.print(f"  Amount: [green]{amount} ETH[/green]")
+                    console.print(f"  Network: [blue]BASE[/blue]\n")
+                    
+                    confirm = Prompt.ask("[yellow]Send this transaction?[/yellow]", choices=["y", "n"], default="n")
                     if confirm != "y":
                         console.print("[dim]Cancelled.[/dim]")
                         continue
-                    delete_wallet()
-                try:
-                    wallet = import_wallet(private_key)
-                    mem["wallet"] = {"address": wallet["address"], "network": "base"}
-                    save_memory(mem)
-                    console.print(f"\n[bold green]✓ Wallet Imported![/bold green]")
-                    console.print(f"[bold blue]Address:[/bold blue] [cyan]{wallet['address']}[/cyan]")
-                except ValueError as e:
-                    console.print(f"[red]{e}[/red]")
-                except ImportError:
-                    console.print("[red]eth-account not installed. Run: pip install eth-account[/red]")
-                except Exception as e:
-                    console.print(f"[red]Failed to import wallet: {e}[/red]")
+                    
+                    console.print("[cyan]Sending transaction...[/cyan]")
+                    result = send_transaction(to_address, amount)
+                    
+                    if result.get("success"):
+                        console.print(f"\n[bold green]✓ Transaction Sent![/bold green]")
+                        console.print(f"  TX Hash: [cyan]{result['tx_hash']}[/cyan]")
+                        console.print(f"  Explorer: [link={result['explorer_url']}]View on Basescan ↗[/link]")
+                    else:
+                        console.print(f"[red]✗ {result.get('error')}[/red]")
+                    continue
+                
+                # Unknown wallet subcommand
+                console.print(f"[yellow]Unknown: /wallet {wallet_args}[/yellow]")
+                console.print("[dim]Type /wallet for available commands[/dim]")
                 continue
             
             if user == "/clear_chat":
@@ -1103,18 +1326,213 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                 console.print(f"  Feed items checked: {result.get('feed_items', 0)}")
                 continue
             
-            if user.startswith("/code "):
-                from agent.tools.opencode import quick_code, is_available, list_projects, set_active_project, get_active_project
-                code_prompt = user[6:].strip()
-                if not code_prompt:
-                    console.print("[yellow]Usage: /code <describe what you want>[/yellow]")
-                    console.print("[yellow]       /code @<project> <continue working>[/yellow]")
+            if user.startswith("/code"):
+                from agent.tools.opencode import (
+                    quick_code, is_available, list_projects, set_active_project, 
+                    get_active_project, list_sessions, create_session, set_active_session,
+                    undo_last, redo_last, compact_session, get_models, switch_model,
+                    get_agents, switch_agent, share_session, init_project, get_config
+                )
+                from rich.status import Status
+                
+                code_args = user[5:].strip()
+                
+                # /code alone → show submenu
+                if not code_args:
+                    console.print("\n[bold magenta]💻 OPENCODE COMMANDS 💻[/bold magenta]")
+                    
+                    if is_available():
+                        console.print("[green]● OpenCode is running[/green]")
+                        config = get_config()
+                        if config:
+                            model = config.get("model", "unknown")
+                            console.print(f"[dim]Model: {model}[/dim]")
+                    else:
+                        console.print("[red]○ OpenCode is not running[/red]")
+                        console.print("[dim]Start with: opencode serve[/dim]\n")
+                    
+                    console.print("\n[bold cyan]📁 Projects[/bold cyan]")
+                    console.print("  /code <prompt>              new coding task")
+                    console.print("  /code @<project> <prompt>   continue project")
+                    
+                    console.print("\n[bold cyan]⏪ History[/bold cyan]")
+                    console.print("  /code undo                  undo last action")
+                    console.print("  /code redo                  redo undone action")
+                    console.print("  /code sessions              list sessions")
+                    console.print("  /code resume <id>           resume session")
+                    
+                    console.print("\n[bold cyan]🤖 Models & Agents[/bold cyan]")
+                    console.print("  /code models                list available models")
+                    console.print("  /code model <name>          switch model")
+                    console.print("  /code agents                list agents")
+                    console.print("  /code agent <name>          switch agent")
+                    
+                    console.print("\n[bold cyan]🧹 Utils[/bold cyan]")
+                    console.print("  /code compact               compress context")
+                    console.print("  /code share                 share session link")
+                    console.print("  /code init                  create AGENTS.md")
+                    
+                    # Show projects if available
+                    if is_available():
+                        projects = list_projects()
+                        if projects:
+                            active = get_active_project()
+                            console.print("\n[bold]Active Projects:[/bold]")
+                            for p in projects[:5]:
+                                marker = "[green]●[/green]" if p == active else " "
+                                console.print(f"  {marker} {p}")
+                            if len(projects) > 5:
+                                console.print(f"  [dim]... and {len(projects)-5} more[/dim]")
                     continue
                 
-                if not is_available():
+                # Check if OpenCode is available for most commands
+                if not is_available() and code_args not in ["help"]:
                     console.print("[yellow]OpenCode not running. Start with:[/yellow] opencode serve")
                     console.print("[dim]Install: curl -fsSL https://opencode.ai/install | bash[/dim]")
                     continue
+                
+                # /code undo
+                if code_args == "undo":
+                    with Status("[cyan]⏪ Undoing...[/cyan]", spinner="dots", console=console):
+                        result = undo_last()
+                    if result.get("success"):
+                        console.print("[green]✓ Undo successful[/green]")
+                    else:
+                        console.print(f"[red]✗ Undo failed: {result.get('error')}[/red]")
+                    continue
+                
+                # /code redo
+                if code_args == "redo":
+                    with Status("[cyan]⏩ Redoing...[/cyan]", spinner="dots", console=console):
+                        result = redo_last()
+                    if result.get("success"):
+                        console.print("[green]✓ Redo successful[/green]")
+                    else:
+                        console.print(f"[red]✗ Redo failed: {result.get('error')}[/red]")
+                    continue
+                
+                # /code compact
+                if code_args == "compact":
+                    with Status("[cyan]🧹 Compacting session...[/cyan]", spinner="dots", console=console):
+                        result = compact_session()
+                    if result.get("success"):
+                        console.print("[green]✓ Session compacted[/green]")
+                    else:
+                        console.print(f"[red]✗ Compact failed: {result.get('error')}[/red]")
+                    continue
+                
+                # /code models
+                if code_args == "models":
+                    with Status("[cyan]Loading models...[/cyan]", spinner="dots", console=console):
+                        models = get_models()
+                    if models:
+                        console.print("\n[bold]Available Models:[/bold]")
+                        by_provider = {}
+                        for m in models:
+                            prov = m.get("provider", "Unknown")
+                            if prov not in by_provider:
+                                by_provider[prov] = []
+                            by_provider[prov].append(m)
+                        for prov, prov_models in sorted(by_provider.items()):
+                            console.print(f"\n[cyan]{prov}[/cyan]")
+                            for m in prov_models[:5]:
+                                console.print(f"  • {m.get('id', m.get('name'))}")
+                            if len(prov_models) > 5:
+                                console.print(f"  [dim]... and {len(prov_models)-5} more[/dim]")
+                    else:
+                        console.print("[yellow]No models found or failed to fetch[/yellow]")
+                    continue
+                
+                # /code model <name>
+                if code_args.startswith("model "):
+                    model_id = code_args[6:].strip()
+                    with Status(f"[cyan]Switching to {model_id}...[/cyan]", spinner="dots", console=console):
+                        result = switch_model(model_id)
+                    if result.get("success"):
+                        console.print(f"[green]✓ Model switched to: {model_id}[/green]")
+                    else:
+                        console.print(f"[red]✗ Failed: {result.get('error')}[/red]")
+                    continue
+                
+                # /code agents
+                if code_args == "agents":
+                    with Status("[cyan]Loading agents...[/cyan]", spinner="dots", console=console):
+                        agents = get_agents()
+                    if agents:
+                        console.print("\n[bold]Available Agents:[/bold]")
+                        for a in agents:
+                            aid = a.get("id") or a.get("name", "unknown")
+                            desc = a.get("description", "")
+                            mode = a.get("mode", "")
+                            mode_tag = f"[dim]({mode})[/dim]" if mode else ""
+                            console.print(f"  • [cyan]{aid}[/cyan] {mode_tag}")
+                            if desc:
+                                console.print(f"    [dim]{desc[:60]}...[/dim]" if len(desc) > 60 else f"    [dim]{desc}[/dim]")
+                    else:
+                        console.print("[bold]Standard Agents:[/bold]")
+                        console.print("  • [cyan]build[/cyan] [dim](primary)[/dim] - Full tools access")
+                        console.print("  • [cyan]plan[/cyan] [dim](primary)[/dim] - Read-only analysis")
+                        console.print("  • [cyan]explore[/cyan] [dim](subagent)[/dim] - Fast codebase search")
+                    continue
+                
+                # /code agent <name>
+                if code_args.startswith("agent "):
+                    agent_id = code_args[6:].strip()
+                    with Status(f"[cyan]Switching to {agent_id}...[/cyan]", spinner="dots", console=console):
+                        result = switch_agent(agent_id)
+                    if result.get("success"):
+                        console.print(f"[green]✓ Agent switched to: {agent_id}[/green]")
+                    else:
+                        console.print(f"[red]✗ Failed: {result.get('error')}[/red]")
+                    continue
+                
+                # /code share
+                if code_args == "share":
+                    with Status("[cyan]Generating share link...[/cyan]", spinner="dots", console=console):
+                        result = share_session()
+                    if result.get("success"):
+                        console.print(f"[green]✓ Session shared![/green]")
+                        console.print(f"[bold]Link:[/bold] {result.get('url')}")
+                    else:
+                        console.print(f"[red]✗ Share failed: {result.get('error')}[/red]")
+                    continue
+                
+                # /code init
+                if code_args == "init":
+                    with Status("[cyan]Creating AGENTS.md...[/cyan]", spinner="dots", console=console):
+                        result = init_project()
+                    if result.get("success"):
+                        console.print("[green]✓ AGENTS.md created/updated[/green]")
+                    else:
+                        console.print(f"[red]✗ Init failed: {result.get('error')}[/red]")
+                    continue
+                
+                # /code sessions
+                if code_args == "sessions":
+                    with Status("[cyan]Loading sessions...[/cyan]", spinner="dots", console=console):
+                        sessions = list_sessions()
+                    if sessions:
+                        console.print("\n[bold]OpenCode Sessions:[/bold]")
+                        for s in sessions[:10]:
+                            sid = s.get("id", "")[:8]
+                            title = s.get("title", "Untitled")
+                            console.print(f"  • [cyan]{sid}[/cyan] {title}")
+                        if len(sessions) > 10:
+                            console.print(f"  [dim]... and {len(sessions)-10} more[/dim]")
+                        console.print("\n[dim]Resume with: /code resume <id>[/dim]")
+                    else:
+                        console.print("[dim]No sessions found[/dim]")
+                    continue
+                
+                # /code resume <id>
+                if code_args.startswith("resume "):
+                    session_id = code_args[7:].strip()
+                    set_active_session(session_id)
+                    console.print(f"[green]✓ Resumed session: {session_id}[/green]")
+                    continue
+                
+                # Default: treat as coding prompt
+                code_prompt = code_args
                 
                 # Check if continuing an existing project: /code @project_name <prompt>
                 project = None
@@ -1131,8 +1549,6 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                             console.print(f"  [cyan]{p}[/cyan]")
                         continue
                 
-                from rich.status import Status
-                
                 with Status("[cyan]⚡ OpenCode generating code...[/cyan]", spinner="dots", console=console) as status:
                     result, project_name = quick_code(code_prompt, project=project)
                 
@@ -1140,24 +1556,6 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                 if project_name:
                     console.print(f"\n[dim]Project folder: workspace/{project_name}/[/dim]")
                     console.print(f"[dim]Continue with: /code @{project_name} <request>[/dim]")
-                continue
-            
-            if user == "/code":
-                from agent.tools.opencode import is_available, list_projects, get_active_project
-                if is_available():
-                    console.print("[green]● OpenCode is running[/green]")
-                    projects = list_projects()
-                    if projects:
-                        active = get_active_project()
-                        console.print("\n[bold]Projects:[/bold]")
-                        for p in projects:
-                            marker = "[green]●[/green]" if p == active else " "
-                            console.print(f"  {marker} {p}")
-                        console.print("\n[dim]Continue: /code @<project> <request>[/dim]")
-                else:
-                    console.print("[red]○ OpenCode is not running[/red]")
-                    console.print("[dim]Start with: opencode serve[/dim]")
-                    console.print("[dim]Install: curl -fsSL https://opencode.ai/install | bash[/dim]")
                 continue
             
             if user.startswith("/attach "):

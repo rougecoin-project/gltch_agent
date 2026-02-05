@@ -4,8 +4,8 @@ export default defineConfig({
   server: {
     port: 3000,
     proxy: {
-      '/api': 'http://localhost:18888',
-      '/health': 'http://localhost:18888'
+      '/api': 'http://localhost:18890',
+      '/health': 'http://localhost:18890'
     }
   },
   build: {

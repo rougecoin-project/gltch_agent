@@ -1,0 +1,39 @@
+# Example Heartbeat Configuration Template
+# Copy this file and customize for your website
+
+# Required: Unique identifier for this site (alphanumeric + underscore, starts with letter)
+site_id: example_site
+
+# Required: Human-readable name
+display_name: Example Site
+
+# How often to run heartbeat (in hours)
+interval_hours: 6
+
+# Name of API key in memory.json api_keys section (optional)
+# Each site can ONLY access its own configured key (exploit protection)
+api_key_name: example_site
+
+# API endpoint (optional, for reference)
+api_base_url: https://api.example.com/v1
+
+# Security limits
+max_requests_per_heartbeat: 5
+timeout_seconds: 20
+
+# Enable/disable this heartbeat
+enabled: false
+
+# Tasks to run during heartbeat
+# Available default actions: check_feed, update_status, log_activity
+# Custom handlers can be registered via HeartbeatManager.register_handler()
+tasks:
+  - action: check_feed
+    description: Check for new content
+    params:
+      limit: 10
+      
+  - action: log_activity
+    description: Log heartbeat activity
+    params:
+      message: "Periodic check-in"

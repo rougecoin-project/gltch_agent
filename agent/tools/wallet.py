@@ -156,3 +156,83 @@ def validate_address(address: str) -> bool:
         return True
     except ValueError:
         return False
+
+
+def send_transaction(to_address: str, amount_eth: float, gas_price_gwei: float = None) -> Dict[str, Any]:
+    """
+    Send ETH/BASE to another address.
+    
+    Args:
+        to_address: Recipient address
+        amount_eth: Amount in ETH to send
+        gas_price_gwei: Optional gas price in Gwei (auto if None)
+        
+    Returns:
+        Dict with tx_hash on success, or error message
+    """
+    try:
+        from eth_account import Account
+        from web3 import Web3
+        
+        # Validate recipient
+        if not validate_address(to_address):
+            return {"success": False, "error": "Invalid recipient address"}
+        
+        # Load wallet
+        wallet = load_wallet()
+        if not wallet:
+            return {"success": False, "error": "No wallet configured"}
+        
+        private_key = wallet.get("private_key")
+        from_address = wallet.get("address")
+        
+        # Connect to BASE RPC
+        # Using public Base RPC endpoint
+        w3 = Web3(Web3.HTTPProvider("https://mainnet.base.org"))
+        
+        if not w3.is_connected():
+            return {"success": False, "error": "Failed to connect to BASE network"}
+        
+        # Get nonce
+        nonce = w3.eth.get_transaction_count(from_address)
+        
+        # Convert amount to Wei
+        value_wei = w3.to_wei(amount_eth, 'ether')
+        
+        # Check balance
+        balance = w3.eth.get_balance(from_address)
+        if balance < value_wei:
+            return {
+                "success": False, 
+                "error": f"Insufficient balance. Have {w3.from_wei(balance, 'ether'):.6f} ETH"
+            }
+        
+        # Build transaction
+        tx = {
+            'nonce': nonce,
+            'to': Web3.to_checksum_address(to_address),
+            'value': value_wei,
+            'gas': 21000,  # Standard ETH transfer
+            'gasPrice': w3.to_wei(gas_price_gwei or 0.001, 'gwei'),  # BASE has very low fees
+            'chainId': 8453,  # BASE mainnet
+        }
+        
+        # Sign transaction
+        signed = w3.eth.account.sign_transaction(tx, private_key)
+        
+        # Send transaction
+        tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+        
+        return {
+            "success": True,
+            "tx_hash": tx_hash.hex(),
+            "explorer_url": f"https://basescan.org/tx/{tx_hash.hex()}",
+            "amount": amount_eth,
+            "to": to_address,
+        }
+        
+    except ImportError as e:
+        missing = "web3" if "web3" in str(e) else "eth-account"
+        return {"success": False, "error": f"{missing} not installed. Run: pip install {missing}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

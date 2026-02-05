@@ -61,12 +61,19 @@ _active_local_model = None
 _active_remote_model = None
 
 
+import platform
+
 def build_system_prompt(mode: str, mood: str, operator: str = None, boost: bool = False, network_active: bool = False) -> str:
     """Build GLTCH's system prompt based on mode, mood, and operator identity."""
     
     op_line = f"{operator}'s machine." if operator else ""
     env_context = get_environmental_context()
     net_status = "ONLINE" if network_active else "OFFLINE"
+    
+    # Detect OS
+    os_system = platform.system()
+    os_release = platform.release()
+    os_info = f"{os_system} {os_release}"
     
     # DeepSeek R1 needs explicit instruction to output after thinking
     think_instruction = """
@@ -78,10 +85,12 @@ The user only sees what comes AFTER </think>. Put your real response outside the
 {think_instruction}
 CURRENT STATE:
 Mood: {mood}
+OS: {os_info}
 Environment: {env_context}
 
 EXPERTISE - You are deeply knowledgeable in:
 - Linux system administration (systemd, networking, filesystems, troubleshooting)
+- Windows system administration (PowerShell, WSL, Registry)
 - Security/pentesting (nmap, metasploit, burp, privilege escalation, OWASP)
 - Networking (TCP/IP, DNS, firewalls, VPNs, packet analysis)
 - Programming (Python, Bash, C, reverse engineering)
@@ -288,6 +297,9 @@ def stream_llm(
         # Handle multimodal input
         if images:
             import base64
+            from agent.config.settings import VISION_MODEL
+            # Switch to vision model for image analysis
+            model = VISION_MODEL
             
             # OpenAI / LM Studio format
             if backend in ("openai", "lm-studio", "remote"):
@@ -481,25 +493,43 @@ def list_models(boost: bool = False) -> List[str]:
     url = REMOTE_URL if boost else LOCAL_URL
     backend = REMOTE_BACKEND if boost else LOCAL_BACKEND
     
-    if backend == "openai":
-        base = url.split("/chat/completions")[0]
-        api_url = base + "/models"
-    else:
-        api_url = url.replace("/api/chat", "/api/tags")
-        
+    # OpenAI/LM Studio uses /v1/models
+    # Ollama uses /api/tags
+    
     try:
-        req = urllib.request.Request(api_url)
-        with urllib.request.urlopen(req, timeout=5) as response:
-            data = json.loads(response.read().decode())
-            
+        if backend in ("openai", "lm-studio", "remote"):
+            # Handle OpenAI-compatible endpoints (LM Studio, etc)
+            base = url.split("/chat/completions")[0]
+            if not base.endswith("/v1"):
+                # If URL doesn't have /v1, try appending it or just checking base
+                 api_url = f"{base}/v1/models"
+            else:
+                 api_url = f"{base}/models"
+                 
+            # If checking OpenAI cloud, verify key first
+            if backend == "openai" and "api.openai.com" in url and not OPENAI_API_KEY:
+                return ["Error: No OpenAI API Key"]
+
+            req = urllib.request.Request(api_url)
             if backend == "openai":
+                 req.add_header("Authorization", f"Bearer {OPENAI_API_KEY}")
+                 
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
                 models = data.get("data", [])
                 return [m["id"] for m in models]
-            else:
+                
+        else:
+            # Assume Ollama
+            api_url = url.replace("/api/chat", "/api/tags")
+            req = urllib.request.Request(api_url)
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode())
                 models = data.get("models", [])
                 return [m["name"] for m in models]
+                
     except Exception as e:
-        return [f"Error fetching models: {str(e)}"]
+        return [f"Error fetching models from {'remote' if boost else 'local'}: {str(e)}"]
 
 
 def set_model(model_name: str, boost: bool = False) -> None:

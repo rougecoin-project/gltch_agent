@@ -268,6 +268,22 @@ export class GltchSidebar extends LitElement {
           <span class="label">docs</span>
           <span class="hotkey">F5</span>
         </div>
+        <div 
+          class="nav-item ${this.currentView === 'heartbeat' ? 'active' : ''}"
+          @click=${() => this.navigate('heartbeat')}
+        >
+          <span class="icon">›</span>
+          <span class="label">heartbeat</span>
+          <span class="hotkey">F6</span>
+        </div>
+        <div 
+          class="nav-item ${this.currentView === 'sessions' ? 'active' : ''}"
+          @click=${() => this.navigate('sessions')}
+        >
+          <span class="icon">›</span>
+          <span class="label">sessions</span>
+          <span class="hotkey">F7</span>
+        </div>
       </div>
 
       <div class="section">

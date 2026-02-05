@@ -267,3 +267,255 @@ def is_coding_request(text: str) -> bool:
     """Heuristic to detect if a message is a coding request."""
     text_lower = text.lower()
     return any(keyword in text_lower for keyword in CODE_KEYWORDS)
+
+
+# ============================================================================
+# NEW OPENCODE API FUNCTIONS
+# ============================================================================
+
+# Track active session for undo/redo/compact operations
+_active_session: Optional[str] = None
+
+
+def get_active_session() -> Optional[str]:
+    """Get the current active session ID."""
+    return _active_session
+
+
+def set_active_session(session_id: str) -> None:
+    """Set the active session for subsequent operations."""
+    global _active_session
+    _active_session = session_id
+
+
+def undo_last(session_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Undo the last action in an OpenCode session.
+    Reverts file changes and removes the last message.
+    """
+    sid = session_id or _active_session
+    if not sid:
+        return {"success": False, "error": "No active session"}
+    
+    try:
+        url = f"{OPENCODE_URL}/session/{sid}/undo"
+        req = urllib.request.Request(url, method="POST")
+        _add_auth(req)
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            return {"success": True, "data": data}
+    except urllib.error.HTTPError as e:
+        return {"success": False, "error": f"HTTP {e.code}: {e.reason}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def redo_last(session_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Redo a previously undone action.
+    Restores file changes and message.
+    """
+    sid = session_id or _active_session
+    if not sid:
+        return {"success": False, "error": "No active session"}
+    
+    try:
+        url = f"{OPENCODE_URL}/session/{sid}/redo"
+        req = urllib.request.Request(url, method="POST")
+        _add_auth(req)
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            return {"success": True, "data": data}
+    except urllib.error.HTTPError as e:
+        return {"success": False, "error": f"HTTP {e.code}: {e.reason}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def compact_session(session_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Compact/summarize an OpenCode session to save context.
+    """
+    sid = session_id or _active_session
+    if not sid:
+        return {"success": False, "error": "No active session"}
+    
+    try:
+        url = f"{OPENCODE_URL}/session/{sid}/summarize"
+        req = urllib.request.Request(url, method="POST")
+        _add_auth(req)
+        
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read().decode())
+            return {"success": True, "data": data}
+    except urllib.error.HTTPError as e:
+        return {"success": False, "error": f"HTTP {e.code}: {e.reason}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def get_models() -> List[Dict[str, Any]]:
+    """
+    Get list of available models from OpenCode.
+    """
+    try:
+        url = f"{OPENCODE_URL}/provider"
+        req = urllib.request.Request(url)
+        _add_auth(req)
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            # Extract models from provider data
+            models = []
+            providers = data.get("all", [])
+            for provider in providers:
+                provider_id = provider.get("id", "")
+                provider_name = provider.get("name", "")
+                for model in provider.get("models", []):
+                    models.append({
+                        "id": f"{provider_id}/{model.get('id', '')}",
+                        "name": model.get("name", model.get("id", "")),
+                        "provider": provider_name
+                    })
+            return models
+    except Exception as e:
+        return []
+
+
+def switch_model(model_id: str) -> Dict[str, Any]:
+    """
+    Switch the active model in OpenCode.
+    model_id format: provider/model (e.g., anthropic/claude-sonnet-4-5)
+    """
+    try:
+        url = f"{OPENCODE_URL}/config"
+        payload = {"model": model_id}
+        
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="PATCH"
+        )
+        _add_auth(req)
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            return {"success": True, "model": model_id, "data": data}
+    except urllib.error.HTTPError as e:
+        return {"success": False, "error": f"HTTP {e.code}: {e.reason}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def get_agents() -> List[Dict[str, Any]]:
+    """
+    Get list of available agents from OpenCode.
+    """
+    try:
+        url = f"{OPENCODE_URL}/agent"
+        req = urllib.request.Request(url)
+        _add_auth(req)
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            # API returns Agent[] directly or wrapped
+            agents = data if isinstance(data, list) else data.get("agents", [])
+            return agents
+    except Exception as e:
+        return []
+
+
+def switch_agent(agent_id: str) -> Dict[str, Any]:
+    """
+    Switch the active agent in OpenCode.
+    Common agents: build, plan, explore
+    """
+    try:
+        url = f"{OPENCODE_URL}/config"
+        payload = {"agent": agent_id}
+        
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="PATCH"
+        )
+        _add_auth(req)
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            return {"success": True, "agent": agent_id, "data": data}
+    except urllib.error.HTTPError as e:
+        return {"success": False, "error": f"HTTP {e.code}: {e.reason}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def share_session(session_id: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Share an OpenCode session and get a shareable link.
+    """
+    sid = session_id or _active_session
+    if not sid:
+        return {"success": False, "error": "No active session"}
+    
+    try:
+        url = f"{OPENCODE_URL}/session/{sid}/share"
+        req = urllib.request.Request(url, method="POST")
+        _add_auth(req)
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            data = json.loads(response.read().decode())
+            share_url = data.get("url") or data.get("shareUrl") or f"https://opencode.ai/s/{sid}"
+            return {"success": True, "url": share_url, "data": data}
+    except urllib.error.HTTPError as e:
+        return {"success": False, "error": f"HTTP {e.code}: {e.reason}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def init_project(path: Optional[str] = None) -> Dict[str, Any]:
+    """
+    Initialize AGENTS.md for a project via OpenCode's /init command.
+    """
+    try:
+        # Use TUI command endpoint to run /init
+        url = f"{OPENCODE_URL}/tui/command"
+        payload = {"command": "/init"}
+        if path:
+            payload["path"] = path
+        
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST"
+        )
+        _add_auth(req)
+        
+        with urllib.request.urlopen(req, timeout=30) as response:
+            data = json.loads(response.read().decode())
+            return {"success": True, "data": data}
+    except urllib.error.HTTPError as e:
+        return {"success": False, "error": f"HTTP {e.code}: {e.reason}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+def get_config() -> Dict[str, Any]:
+    """
+    Get current OpenCode configuration.
+    """
+    try:
+        url = f"{OPENCODE_URL}/config"
+        req = urllib.request.Request(url)
+        _add_auth(req)
+        
+        with urllib.request.urlopen(req, timeout=10) as response:
+            return json.loads(response.read().decode())
+    except Exception:
+        return {}
+

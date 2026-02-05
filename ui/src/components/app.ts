@@ -11,11 +11,13 @@ import './header.js';
 import './chat.js';
 import './status.js';
 import './settings.js';
+import './sessions.js';
 import './wallet.js';
 import './docs.js';
 import './ticker.js';
+import './heartbeat.js';
 
-type View = 'chat' | 'status' | 'settings' | 'wallet' | 'docs';
+type View = 'chat' | 'status' | 'settings' | 'wallet' | 'docs' | 'heartbeat' | 'sessions';
 
 @customElement('gltch-app')
 export class GltchApp extends LitElement {
@@ -95,10 +97,14 @@ export class GltchApp extends LitElement {
         return html`<gltch-status></gltch-status>`;
       case 'settings':
         return html`<gltch-settings></gltch-settings>`;
+      case 'sessions':
+        return html`<gltch-sessions @view-change=${this.handleViewChange}></gltch-sessions>`;
       case 'wallet':
         return html`<gltch-wallet></gltch-wallet>`;
       case 'docs':
         return html`<gltch-docs></gltch-docs>`;
+      case 'heartbeat':
+        return html`<gltch-heartbeat></gltch-heartbeat>`;
       default:
         return html`<gltch-chat></gltch-chat>`;
     }

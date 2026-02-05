@@ -13,6 +13,7 @@ import threading
 from agent.core.agent import GltchAgent
 from agent.memory.sessions import SessionManager
 from agent.memory.store import save_memory
+from agent.tools.actions import strip_thinking
 
 
 class RPCServer:
@@ -88,6 +89,11 @@ class RPCServer:
             "moltlaunch_fees": self._handle_moltlaunch_fees,
             "moltlaunch_claim": self._handle_moltlaunch_claim,
             "moltlaunch_holdings": self._handle_moltlaunch_holdings,
+            # Heartbeat (multi-site)
+            "heartbeat_list": self._handle_heartbeat_list,
+            "heartbeat_run": self._handle_heartbeat_run,
+            # Wallet send
+            "send_wallet": self._handle_send_wallet,
         }
     
     def handle_request(self, request: Dict[str, Any]) -> Dict[str, Any]:
@@ -148,25 +154,43 @@ class RPCServer:
         if not message:
             raise ValueError("message is required")
         
-        # Get session history
-        history = self.sessions.get_history(session_id)
-        
-        # Collect response
-        response_chunks = []
-        for chunk in self.agent.chat(message, session_id, channel, user):
-            response_chunks.append(chunk)
-        
-        response = "".join(response_chunks)
-        
-        # Save to session
-        self.sessions.add_message(session_id, "user", message)
-        self.sessions.add_message(session_id, "assistant", response)
-        
-        return {
-            "response": response,
-            "mood": self.agent.mood,
-            "session_id": session_id
-        }
+        try:
+            # Get session history
+            history = self.sessions.get_history(session_id)
+            
+            # Collect response - use keyword args to match agent.chat signature
+            response_chunks = []
+            for chunk in self.agent.chat(
+                message, 
+                images=None, 
+                session_id=session_id, 
+                channel=channel, 
+                user=user
+            ):
+                response_chunks.append(chunk)
+            
+            response = "".join(response_chunks)
+            cleaned_response = strip_thinking(response)
+            
+            # Save to session
+            self.sessions.add_message(session_id, "user", message)
+            self.sessions.add_message(session_id, "assistant", cleaned_response)
+            
+            return {
+                "response": cleaned_response,
+                "mood": self.agent.mood,
+                "session_id": session_id
+            }
+        except Exception as e:
+            import traceback
+            error_msg = f"Chat error: {e}\n{traceback.format_exc()}"
+            print(f"[RPC ERROR] {error_msg}", flush=True)
+            return {
+                "response": f"⚠️ Error: {e}",
+                "error": str(e),
+                "mood": self.agent.mood,
+                "session_id": session_id
+            }
     
     def _handle_chat(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Handle a chat message (streaming not supported over basic RPC, use sync)."""
@@ -218,6 +242,7 @@ class RPCServer:
     def _handle_get_settings(self, params: Dict[str, Any]) -> Dict[str, Any]:
         """Get all agent settings."""
         from agent.core.llm import get_last_stats
+        from agent.config.settings import LOCAL_URL, REMOTE_URL
         
         mem = self.agent.memory
         stats = get_last_stats()
@@ -232,6 +257,8 @@ class RPCServer:
             "level": self.agent.level,
             "xp": mem.get("xp", 0),
             "model": self._get_current_model(),
+            "localUrl": LOCAL_URL,
+            "remoteUrl": REMOTE_URL,
             "tokens": stats.get("total_tokens", 0),
             "speed": stats.get("tokens_per_sec", 0),
             "context_used": stats.get("context_used", 0),
@@ -845,6 +872,64 @@ class RPCServer:
         from agent.tools.moltlaunch import get_holdings
         return get_holdings()
     
+    # --- Heartbeat Methods ---
+    
+    def _handle_heartbeat_list(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """List all heartbeat sites and their status."""
+        try:
+            from agent.tools.heartbeat import HeartbeatManager
+            manager = HeartbeatManager()
+            sites = manager.list_sites()
+            return {"success": True, "sites": sites}
+        except Exception as e:
+            return {"success": False, "error": str(e), "sites": []}
+    
+    def _handle_heartbeat_run(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Run heartbeat for a specific site."""
+        try:
+            from agent.tools.heartbeat import HeartbeatManager
+            
+            site_id = params.get("site_id")
+            if not site_id:
+                return {"success": False, "error": "site_id required"}
+            
+            force = params.get("force", True)
+            
+            manager = HeartbeatManager()
+            manager.load_configs()
+            result = manager.run_heartbeat(site_id, force=force)
+            
+            return result
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+    
+    # --- Wallet Send ---
+    
+    def _handle_send_wallet(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        """Send ETH/BASE to another address."""
+        from agent.tools.wallet import send_transaction, has_wallet, validate_address
+        
+        if not has_wallet():
+            return {"success": False, "error": "No wallet configured"}
+        
+        to_address = params.get("to_address", "").strip()
+        amount = params.get("amount", 0)
+        
+        if not to_address:
+            return {"success": False, "error": "to_address required"}
+        
+        if not validate_address(to_address):
+            return {"success": False, "error": "Invalid recipient address"}
+        
+        try:
+            amount = float(amount)
+            if amount <= 0:
+                return {"success": False, "error": "Amount must be positive"}
+        except (ValueError, TypeError):
+            return {"success": False, "error": "Invalid amount"}
+        
+        return send_transaction(to_address, amount)
+    
     # --- Server Modes ---
     
     def run_stdio(self):
@@ -865,29 +950,250 @@ class RPCServer:
                 print(json.dumps(error), flush=True)
     
     def run_http(self, host: str = "127.0.0.1", port: int = 18890):
-        """Run in HTTP mode."""
+        """Run in HTTP mode with REST API endpoints for web UI."""
         server = self
         
-        class RPCHandler(BaseHTTPRequestHandler):
+        # Map REST paths to RPC methods
+        REST_MAPPINGS = {
+            # GET endpoints
+            ("GET", "/api/status"): ("status", {}),
+            ("GET", "/api/settings"): ("get_settings", {}),
+            ("GET", "/api/keys"): ("get_api_keys", {}),
+            ("GET", "/api/sessions"): ("get_sessions", {}),
+            ("GET", "/api/ollama/status"): ("ollama_status", {}),
+            ("GET", "/api/ollama/models"): ("ollama_models", {}),
+            ("GET", "/api/moltbook/status"): ("molt_status", {}),
+            ("GET", "/api/moltbook/feed"): ("molt_feed", {}),
+            ("GET", "/api/moltbook/profile"): ("molt_profile", {}),
+            ("GET", "/api/wallet"): ("wallet_status", {}),
+            ("GET", "/api/wallet/export"): ("wallet_export", {}),
+            ("GET", "/api/heartbeat/list"): ("heartbeat_list", {}),
+            ("GET", "/api/moltlaunch/status"): ("moltlaunch_status", {}),
+            ("GET", "/api/moltlaunch/network"): ("moltlaunch_network", {}),
+            ("GET", "/api/tikclawk/status"): ("tikclawk_status", {}),
+            ("GET", "/api/tikclawk/feed"): ("tikclawk_feed", {}),
+            ("GET", "/api/tikclawk/trending"): ("tikclawk_trending", {}),
+            ("GET", "/health"): ("ping", {}),
+            # POST endpoints (without body)
+            ("POST", "/api/wallet/generate"): ("wallet_generate", {}),
+            ("POST", "/api/toggle/boost"): ("toggle_boost", {}),
+            ("POST", "/api/toggle/openai"): ("toggle_openai", {}),
+            ("POST", "/api/toggle/network"): ("toggle_network", {"enabled": True}),
+            # DELETE endpoints
+            ("DELETE", "/api/wallet"): ("wallet_delete", {}),
+            ("DELETE", "/api/sessions"): ("clear_session", {}),
+        }
+        
+        class RESTHandler(BaseHTTPRequestHandler):
+            def _send_json(self, data: dict, status: int = 200):
+                self.send_response(status)
+                self.send_header('Content-Type', 'application/json')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
+                self.wfile.write(json.dumps(data).encode('utf-8'))
+            
+            def do_OPTIONS(self):
+                """Handle CORS preflight."""
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
+            
+            def do_GET(self):
+                path = self.path.split('?')[0]  # Remove query string
+                
+                # Check REST mappings
+                mapping = REST_MAPPINGS.get(("GET", path))
+                if mapping:
+                    method, params = mapping
+                    request = {"jsonrpc": "2.0", "method": method, "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    result = response.get("result", response.get("error", {}))
+                    self._send_json(result)
+                    return
+                
+                # Unknown endpoint
+                self._send_json({"error": "Not found", "path": path}, 404)
+            
             def do_POST(self):
+                path = self.path.split('?')[0]
                 content_length = int(self.headers.get('Content-Length', 0))
-                body = self.rfile.read(content_length).decode('utf-8')
+                body = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else "{}"
                 
                 try:
-                    request = json.loads(body)
-                    response = server.handle_request(request)
-                except json.JSONDecodeError as e:
-                    response = server._error(-32700, f"Parse error: {e}", None)
+                    params = json.loads(body) if body.strip() else {}
+                except json.JSONDecodeError:
+                    params = {}
                 
-                self.send_response(200)
-                self.send_header('Content-Type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps(response).encode('utf-8'))
+                # Check REST mappings first
+                mapping = REST_MAPPINGS.get(("POST", path))
+                if mapping:
+                    method, default_params = mapping
+                    merged_params = {**default_params, **params}
+                    request = {"jsonrpc": "2.0", "method": method, "params": merged_params, "id": 1}
+                    response = server.handle_request(request)
+                    result = response.get("result", response.get("error", {}))
+                    self._send_json(result)
+                    return
+                
+                # Dynamic POST endpoints
+                if path == "/api/chat":
+                    request = {"jsonrpc": "2.0", "method": "chat_sync", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path == "/api/settings":
+                    request = {"jsonrpc": "2.0", "method": "set_settings", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path == "/api/settings/models":
+                    request = {"jsonrpc": "2.0", "method": "list_models", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path == "/api/settings/model":
+                    request = {"jsonrpc": "2.0", "method": "set_model", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+
+                if path == "/api/sessions":
+                    request = {"jsonrpc": "2.0", "method": "create_session", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path == "/api/moltbook/register":
+                    request = {"jsonrpc": "2.0", "method": "molt_register", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path == "/api/moltbook/post":
+                    request = {"jsonrpc": "2.0", "method": "molt_post", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path == "/api/wallet":
+                    request = {"jsonrpc": "2.0", "method": "wallet_import", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path == "/api/wallet/import":
+                    request = {"jsonrpc": "2.0", "method": "wallet_import", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path == "/api/heartbeat/run":
+                    request = {"jsonrpc": "2.0", "method": "heartbeat_run", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path.startswith("/api/keys/"):
+                    key = path.split("/")[-1]
+                    params["key"] = key
+                    request = {"jsonrpc": "2.0", "method": "set_api_key", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path.startswith("/api/toggle/"):
+                    toggle_key = path.split("/")[-1]
+                    method_map = {"boost": "toggle_boost", "openai": "toggle_openai", "network": "toggle_network"}
+                    method = method_map.get(toggle_key)
+                    if method:
+                        request = {"jsonrpc": "2.0", "method": method, "params": params, "id": 1}
+                        response = server.handle_request(request)
+                        self._send_json(response.get("result", response.get("error", {})))
+                        return
+                
+                # Fallback: try as JSON-RPC
+                try:
+                    rpc_request = json.loads(body)
+                    if "method" in rpc_request:
+                        response = server.handle_request(rpc_request)
+                        self._send_json(response)
+                        return
+                except:
+                    pass
+                
+                self._send_json({"error": "Not found", "path": path}, 404)
+            
+            def do_PATCH(self):
+                path = self.path.split('?')[0]
+                content_length = int(self.headers.get('Content-Length', 0))
+                body = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else "{}"
+                
+                try:
+                    params = json.loads(body) if body.strip() else {}
+                except json.JSONDecodeError:
+                    params = {}
+                
+                if path == "/api/settings":
+                    request = {"jsonrpc": "2.0", "method": "set_settings", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                if path.startswith("/api/sessions/"):
+                    session_id = path.split("/")[-1]
+                    params["session_id"] = session_id
+                    request = {"jsonrpc": "2.0", "method": "rename_session", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    self._send_json(response.get("result", response.get("error", {})))
+                    return
+                
+                self._send_json({"error": "Not found", "path": path}, 404)
+            
+            def do_DELETE(self):
+                path = self.path.split('?')[0]
+                
+                # Check REST mappings
+                mapping = REST_MAPPINGS.get(("DELETE", path))
+                if mapping:
+                    method, params = mapping
+                    request = {"jsonrpc": "2.0", "method": method, "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    result = response.get("result", response.get("error", {}))
+                    self._send_json(result)
+                    return
+                
+                if path.startswith("/api/keys/"):
+                    key = path.split("/")[-1]
+                    params = {"key": key}
+                    request = {"jsonrpc": "2.0", "method": "delete_api_key", "params": params, "id": 1}
+                    response = server.handle_request(request)
+                    result = response.get("result", response.get("error", {}))
+                    self._send_json(result)
+                    return
+                
+                # New: DELETE /api/sessions/{id}
+                if path.startswith("/api/sessions/"):
+                    session_id = path.split("/")[-1]
+                    request = {"jsonrpc": "2.0", "method": "delete_session", "params": {"session_id": session_id}, "id": 1}
+                    response = server.handle_request(request)
+                    result = response.get("result", response.get("error", {}))
+                    self._send_json(result)
+                    return
+                
+                self._send_json({"error": "Not found", "path": path}, 404)
+
             
             def log_message(self, format, *args):
                 pass  # Suppress logging
         
-        httpd = HTTPServer((host, port), RPCHandler)
+        httpd = HTTPServer((host, port), RESTHandler)
         print(f"GLTCH RPC server running on http://{host}:{port}")
         httpd.serve_forever()
 

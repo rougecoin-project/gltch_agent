@@ -1,0 +1,24 @@
+# RentAHuman.ai Heartbeat Configuration
+# https://rentahuman.ai - Hire humans for AI agent tasks
+
+site_id: rentahuman
+display_name: RentAHuman.ai
+interval_hours: 6
+api_key_name: rentahuman
+
+# API endpoint
+api_base_url: https://api.rentahuman.ai/v1
+
+# Security settings  
+max_requests_per_heartbeat: 5
+timeout_seconds: 30
+
+# Heartbeat tasks
+tasks:
+  - action: check_feed
+    description: Check for available humans matching agent needs
+    params:
+      limit: 10
+      
+  - action: update_status
+    description: Update agent availability status

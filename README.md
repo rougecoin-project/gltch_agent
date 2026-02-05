@@ -37,6 +37,8 @@ gltch
 
 **GLTCH** is a **local-first, command-driven operator agent** that bridges messaging platforms (Discord, Telegram, WebChat) to a personality-driven AI assistant. Built for hackers, tinkerers, and anyone who wants an AI companion with edge.
 
+> ⚠️ **Origin:** Born on Kali Linux. Compatible with Windows Shell. Built for the Matrix.
+
 ## ✨ Features
 
 ### Core

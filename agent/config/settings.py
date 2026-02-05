@@ -20,6 +20,9 @@ REMOTE_MODEL = os.environ.get("GLTCH_REMOTE_MODEL", "deepseek-r1-distill-qwen-32
 REMOTE_CTX = int(os.environ.get("GLTCH_REMOTE_CTX", "8192"))
 REMOTE_BACKEND = "openai"
 
+# Vision Model (for image analysis)
+VISION_MODEL = os.environ.get("GLTCH_VISION_MODEL", "gemma-3-12b-it")
+
 # OpenAI API (Cloud)
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
