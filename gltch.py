@@ -1199,6 +1199,34 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                         console.print(f"[dim]{result.get('hint')}[/dim]")
                 continue
             
+            if user == "/gate" or user == "/xrge":
+                from agent.tools.token_gate import check_access, get_token_balance
+                from agent.config.settings import XRGE_CONTRACT, XRGE_GATE_THRESHOLD
+                
+                wallet = mem.get("wallet_address") or (mem.get("wallet") or {}).get("address")
+                
+                console.print("\n[bold magenta]🔒 TOKEN GATE STATUS[/bold magenta]")
+                if not wallet:
+                    console.print("[yellow]No wallet connected.[/yellow] Use /wallet generate or /wallet import.")
+                else:
+                    console.print(f"[dim]Wallet:[/dim] {wallet}")
+                    console.print(f"[dim]Contract:[/dim] {XRGE_CONTRACT}")
+                    
+                    with console.status("[cyan]Checking blockchain...[/cyan]"):
+                        balance = get_token_balance(wallet)
+                        
+                    color = "green" if balance >= XRGE_GATE_THRESHOLD else "red"
+                    console.print(f"Balance: [{color}]{balance:,.2f} XRGE[/{color}]")
+                    console.print(f"Required: {XRGE_GATE_THRESHOLD:,.2f} XRGE")
+                    
+                    if balance >= XRGE_GATE_THRESHOLD:
+                        console.print("\n[green]✓ ACCESS GRANTED[/green]")
+                        console.print("You have unlocked [bold]Unhinged Mode[/bold].")
+                    else:
+                        console.print("\n[red]✗ ACCESS DENIED[/red]")
+                        console.print("Hold more $XRGE to unlock premium features.")
+                continue
+
             if user.startswith("/molt post "):
                 from agent.tools.moltbook import quick_post, is_configured
                 if not is_configured():

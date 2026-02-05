@@ -230,9 +230,21 @@ class GltchAgent:
         if mode not in allowed:
             return False
         
-        # Check unlock requirements
-        if mode == "unhinged" and self.level < 3:
-            return False
+        # Check unlock requirements (Level)
+        if mode == "unhinged":
+            if self.level < 3:
+                return False
+            
+            # CHECK TOKEN GATE: Unhinged requires XRGE
+            from agent.tools.token_gate import check_access
+            wallet = self.memory.get("wallet_address")
+            if not wallet and "wallet" in self.memory: # Legacy key format check
+                wallet = self.memory["wallet"].get("address")
+                
+            gate = check_access("unhinged", wallet)
+            if not gate["allowed"]:
+                print(f"[GLTCH] Access Denied: {gate['reason']} (Holdings: {gate['balance']:.2f}, Required: {gate['required']})")
+                return False
         
         self.memory["mode"] = mode
         save_memory(self.memory)

@@ -27,7 +27,17 @@ VISION_MODEL = os.environ.get("GLTCH_VISION_MODEL", "gemma-3-12b-it")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = os.environ.get("GLTCH_OPENAI_MODEL", "gpt-4o")
+# OpenAI API (Cloud)
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+OPENAI_URL = "https://api.openai.com/v1/chat/completions"
+OPENAI_MODEL = os.environ.get("GLTCH_OPENAI_MODEL", "gpt-4o")
 OPENAI_CTX = 128000
+
+# Token Gating (Base / XRGE)
+BASE_RPC_URL = os.environ.get("GLTCH_BASE_RPC", "https://mainnet.base.org")
+XRGE_CONTRACT = os.environ.get("XRGE_CONTRACT_ADDRESS", "0x0000000000000000000000000000000000000000") # Replace with real contract
+XRGE_GATE_THRESHOLD = float(os.environ.get("GLTCH_GATE_THRESHOLD", "1000"))
+
 
 # OpenCode Integration (coding agent)
 OPENCODE_ENABLED = os.environ.get("OPENCODE_ENABLED", "true").lower() == "true"
