@@ -1,6 +1,6 @@
 {
   "name": "gltch",
-  "version": "0.2.0-beta",
+  "version": "0.2.0-beta.1",
   "description": "Local-first AI agent with personality. Runs on your machine, thinks for herself.",
   "type": "module",
   "keywords": [
@@ -28,6 +28,7 @@
   "files": [
     "bin/",
     "agent/**/*.py",
+    "gateway/",
     "ui/dist/",
     "requirements.txt",
     "gltch.py",
@@ -36,6 +37,7 @@
   ],
   "scripts": {
     "postinstall": "node bin/postinstall.js",
+    "prepublishOnly": "npm run build",
     "build": "npm run build:gateway && npm run build:ui",
     "build:gateway": "cd gateway && npm install && npm run build",
     "build:ui": "cd ui && npm install && npm run build"
