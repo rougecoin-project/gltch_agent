@@ -270,6 +270,7 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
         console.print("\n[bold cyan]💻 Code[/bold cyan]")
         console.print("/code                         OpenCode commands (undo/redo/models/agents...)")
         console.print("/attach <path>                attach image for next message")
+        console.print("/browse <url>                 browse URL and extract content")
         
         console.print("\n[bold cyan]💓 Heartbeat[/bold cyan]")
         console.print("/heartbeat                    heartbeat commands (list/run/add...)")
@@ -458,6 +459,28 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
             
             if user == "/help":
                 help_menu()
+                continue
+            
+            # === BROWSE COMMAND (browser automation) ===
+            if user.startswith("/browse"):
+                browse_args = user[7:].strip()
+                if not browse_args:
+                    console.print("[yellow]Usage: /browse <url>[/yellow]")
+                    continue
+                
+                console.print(f"[cyan]🌐 Browsing {browse_args}...[/cyan]")
+                try:
+                    from agent.tools.browser import browse_url
+                    result = browse_url(browse_args)
+                    if result.get("success"):
+                        console.print(f"[green]✓ Title: {result.get('title', 'N/A')}[/green]")
+                        content = result.get("content", "")[:1000]
+                        if content:
+                            console.print(f"[dim]{content}...[/dim]")
+                    else:
+                        console.print(f"[red]✗ {result.get('error', 'Unknown error')}[/red]")
+                except Exception as e:
+                    console.print(f"[red]✗ Browser error: {e}[/red]")
                 continue
             
             # === HEARTBEAT COMMANDS (multi-site) ===

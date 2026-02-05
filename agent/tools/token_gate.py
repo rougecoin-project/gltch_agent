@@ -86,7 +86,7 @@ def check_access(feature: str, wallet_address: Optional[str] = None) -> Dict[str
         }
     
     # Verify XRGE balance
-    if feature == "unhinged":
+    if feature in ("unhinged", "code"):
         balance = get_token_balance(wallet_address, XRGE_CONTRACT)
         allowed = balance >= XRGE_GATE_THRESHOLD
         

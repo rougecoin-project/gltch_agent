@@ -227,7 +227,24 @@ def code(prompt: str, session_id: Optional[str] = None, project: Optional[str] =
     Send a coding request to OpenCode.
     Creates a new session if none provided.
     Returns (response, project_folder_name).
+    
+    TOKEN GATED: Requires XRGE holdings.
     """
+    # TOKEN GATE CHECK - require XRGE holdings for code generation
+    try:
+        from agent.tools.token_gate import check_access
+        from agent.memory import load_memory
+        
+        mem = load_memory()
+        wallet = mem.get("wallet_address") or (mem.get("wallet") or {}).get("address")
+        
+        gate = check_access("code", wallet)
+        if not gate["allowed"]:
+            return f"⚠️ TOKEN GATE: {gate['reason']} (You have {gate['balance']:.2f} XRGE, need {gate['required']})", None
+    except Exception as e:
+        # If token gate check fails, deny access (fail closed)
+        return f"⚠️ Token gate error: {e}. Cannot verify XRGE holdings.", None
+    
     if not is_available():
         return "OpenCode is not running. Start it with: opencode serve", None
     
