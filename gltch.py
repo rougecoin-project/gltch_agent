@@ -6,6 +6,10 @@ Main entry point supporting both terminal UI and RPC modes.
 
 import sys
 import argparse
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
 
 
 def main():
@@ -1168,24 +1172,30 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
             response_chunks = []
             prefix = f"[bold]{AGENT_NAME}[/bold]: "
             
-            # Define callback based on safety setting
-            safety_on = mem.get("safety_enabled", True)
+            # Track the live display object for pausing during prompts
+            live_display = None
             
             def confirmation_wrapper(action, args):
-                # Always allow "read", "ls", "show" without nagging? 
-                # Plan says "Safe Mode (Default): Any system action... will prompt"
-                # But typically read-only ops might be less annoying. 
-                # For strict adherence to user request: "extreme warnings... approve before that"
-                # Let's prompt for everything except maybe 'gif' or safe 'ls' if truly safe?
-                # User asked to approve "actions" generally.
-                
+                nonlocal live_display
                 # Check if safety is disabled
                 if not mem.get("safety_enabled", True):
                     return True
                 
-                return confirm_action_prompt(action, args)
+                # Pause the live display so the prompt is visible
+                if live_display:
+                    live_display.stop()
+                
+                result = confirm_action_prompt(action, args)
+                
+                # Resume the live display
+                if live_display:
+                    live_display.start()
+                
+                return result
             
             with Live(Text.from_markup(f"{prefix}[dim]thinking...[/dim]"), console=console, refresh_per_second=10, transient=True) as live:
+                live_display = live  # Store reference for callback
+                
                 # Send with attached images and confirmation callback
                 gen = agent.chat(
                     user, 
@@ -1221,8 +1231,9 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                 console.print(f"[dim]└─[/dim]")
             
             # Print final response
-            if final_response:
-                console.print(f"{prefix}{final_response}")
+            # Print final response
+            # if final_response:
+            #    console.print(f"{prefix}{final_response}")
 
             # Show action results from agent state
             if agent._last_action_results:
