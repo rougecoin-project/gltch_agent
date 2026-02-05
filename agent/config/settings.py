@@ -35,7 +35,7 @@ OPENAI_CTX = 128000
 
 # Token Gating (Base / XRGE)
 BASE_RPC_URL = os.environ.get("GLTCH_BASE_RPC", "https://mainnet.base.org")
-XRGE_CONTRACT = os.environ.get("XRGE_CONTRACT_ADDRESS", "0x0000000000000000000000000000000000000000") # Replace with real contract
+XRGE_CONTRACT = os.environ.get("XRGE_CONTRACT_ADDRESS", "0x147120faEC9277ec02d957584CFCD92B56A24317") # Replace with real contract
 XRGE_GATE_THRESHOLD = float(os.environ.get("GLTCH_GATE_THRESHOLD", "1000"))
 
 

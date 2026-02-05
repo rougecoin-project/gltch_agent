@@ -16,3 +16,4 @@ pytest-asyncio>=0.21.0
 # ruff>=0.1.0
 # Config
 python-dotenv>=1.0.0
+PyYAML>=6.0.0

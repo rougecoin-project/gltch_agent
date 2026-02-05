@@ -3,7 +3,7 @@ GLTCH Agent - Main agent class
 Central orchestrator for the GLTCH agent system.
 """
 
-from typing import Dict, Any, Optional, Generator
+from typing import Dict, Any, Optional, Generator, List
 import time
 
 from agent.memory.store import load_memory, save_memory, now_iso
