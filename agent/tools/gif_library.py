@@ -21,7 +21,9 @@ def _ensure_library():
     """Create library directory if it doesn't exist."""
     os.makedirs(LIBRARY_DIR, exist_ok=True)
     if not os.path.exists(CATALOG_FILE):
-        _save_catalog({"gifs": [], "tags": {}})
+        # Write directly to avoid recursion with _save_catalog
+        with open(CATALOG_FILE, "w") as f:
+            json.dump({"gifs": [], "tags": {}}, f, indent=2)
 
 
 def _load_catalog() -> Dict[str, Any]:
