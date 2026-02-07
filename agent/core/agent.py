@@ -127,6 +127,36 @@ class GltchAgent:
         if new_mood and new_mood != old_mood:
             self.memory["mood"] = new_mood
         
+        # FOLLOW-UP: If actions returned results, feed them back to GLTCH
+        # so she can analyze/summarize (e.g., search results, command output)
+        followup_response = ""
+        if action_results:
+            action_context = "\n".join([r.replace('[', '').replace(']', '') for r in action_results])
+            followup_prompt = (
+                f"Here's the output from the action(s) you just ran:\n\n"
+                f"{action_context}\n\n"
+                f"Based on this output, give your analysis or answer to the user's "
+                f"original question. Be specific, concise, and helpful. "
+                f"Do NOT say you can't do something — you just DID it. "
+                f"Summarize what you found."
+            )
+            
+            followup_chunks = []
+            for chunk in stream_llm(
+                followup_prompt,
+                history + [{"role": "assistant", "content": cleaned_response}],
+                mode=self.mode,
+                mood=self.mood,
+                boost=self.memory.get("boost", False),
+                operator=self.operator,
+                network_active=self.memory.get("network_active", False),
+                openai_mode=self.memory.get("openai_mode", False)
+            ):
+                followup_chunks.append(chunk)
+                yield chunk
+            
+            followup_response = strip_thinking("".join(followup_chunks).strip())
+        
         # Calculate XP
         stats = get_last_stats()
         chat_xp = 2
@@ -137,7 +167,9 @@ class GltchAgent:
         
         # Update chat history
         history.append({"role": "user", "content": message})
-        history.append({"role": "assistant", "content": strip_thinking(response)})
+        # Include followup in history if it happened
+        final_response = followup_response if followup_response else strip_thinking(response)
+        history.append({"role": "assistant", "content": final_response})
         self.memory["chat_history"] = history[-10:]  # Keep last 10 turns
         save_memory(self.memory)
         
@@ -148,6 +180,7 @@ class GltchAgent:
         # Return final result
         return {
             "response": cleaned_response,
+            "followup_response": followup_response,
             "raw_response": response,
             "mood": self.mood,
             "mood_changed": new_mood and new_mood != old_mood,

@@ -1,6 +1,9 @@
 """
 GLTCH Web Search Tool
-Lightweight DuckDuckGo search - no API key required.
+Multi-strategy web search - no API key required.
+1. DuckDuckGo Instant Answer API (for quick facts)
+2. DuckDuckGo HTML search (for general queries)
+3. Brave Search fallback
 Falls back gracefully if network is offline.
 """
 
@@ -9,12 +12,13 @@ import urllib.parse
 import urllib.error
 import json
 import re
+import html as html_module
 from typing import List, Dict, Any
 
 
 def web_search(query: str, num_results: int = 5) -> Dict[str, Any]:
     """
-    Search the web using DuckDuckGo Instant Answer API + HTML scraping fallback.
+    Search the web using multiple strategies.
     No API key needed.
     
     Returns:
@@ -26,116 +30,223 @@ def web_search(query: str, num_results: int = 5) -> Dict[str, Any]:
             "formatted": str (human-readable summary)
         }
     """
+    results = []
+    answer = ""
+    
+    # Strategy 1: DuckDuckGo Instant Answer API (fast, good for definitions)
     try:
-        # Try DuckDuckGo Instant Answer API first
-        encoded_q = urllib.parse.quote_plus(query)
-        api_url = f"https://api.duckduckgo.com/?q={encoded_q}&format=json&no_redirect=1&no_html=1"
-        
-        req = urllib.request.Request(api_url, headers={
-            "User-Agent": "GLTCH-Agent/0.2 (https://github.com/rougecoin-project/gltch_agent)"
-        })
-        
-        with urllib.request.urlopen(req, timeout=10) as response:
-            data = json.loads(response.read().decode())
-        
-        results = []
-        answer = ""
-        
-        # Check for instant answer
-        if data.get("AbstractText"):
-            answer = data["AbstractText"]
-            if data.get("AbstractURL"):
-                results.append({
-                    "title": data.get("AbstractSource", "Wikipedia"),
-                    "url": data["AbstractURL"],
-                    "snippet": data["AbstractText"][:200]
-                })
-        
-        # Related topics
-        for topic in data.get("RelatedTopics", [])[:num_results]:
-            if isinstance(topic, dict) and topic.get("Text"):
-                url = topic.get("FirstURL", "")
-                results.append({
-                    "title": topic.get("Text", "")[:80],
-                    "url": url,
-                    "snippet": topic.get("Text", "")[:200]
-                })
-        
-        # If no results from API, try HTML scraping
-        if not results:
-            results = _scrape_ddg_html(query, num_results)
-        
-        # Format readable output
-        formatted = _format_results(query, results, answer)
-        
-        return {
-            "success": True,
-            "query": query,
-            "results": results[:num_results],
-            "answer": answer,
-            "formatted": formatted
-        }
-        
-    except Exception as e:
-        return {
-            "success": False,
-            "query": query,
-            "results": [],
-            "answer": "",
-            "formatted": f"Search failed: {str(e)}"
-        }
+        api_results, api_answer = _ddg_instant_answer(query)
+        results.extend(api_results)
+        if api_answer:
+            answer = api_answer
+    except Exception:
+        pass
+    
+    # Strategy 2: DuckDuckGo HTML search (general web results)
+    if len(results) < 2:
+        try:
+            html_results = _ddg_html_search(query, num_results)
+            # Avoid duplicates
+            existing_urls = {r["url"] for r in results}
+            for r in html_results:
+                if r["url"] not in existing_urls:
+                    results.append(r)
+                    existing_urls.add(r["url"])
+        except Exception:
+            pass
+    
+    # Strategy 3: Brave Search (another free option)
+    if len(results) < 2:
+        try:
+            brave_results = _brave_html_search(query, num_results)
+            existing_urls = {r["url"] for r in results}
+            for r in brave_results:
+                if r["url"] not in existing_urls:
+                    results.append(r)
+        except Exception:
+            pass
+    
+    # Determine success
+    success = len(results) > 0 or bool(answer)
+    formatted = _format_results(query, results[:num_results], answer)
+    
+    return {
+        "success": success,
+        "query": query,
+        "results": results[:num_results],
+        "answer": answer,
+        "formatted": formatted
+    }
 
 
-def _scrape_ddg_html(query: str, num_results: int = 5) -> List[Dict[str, str]]:
-    """Fallback: scrape DuckDuckGo HTML lite."""
+def _ddg_instant_answer(query: str):
+    """DuckDuckGo Instant Answer API - good for Wikipedia-type lookups."""
+    encoded_q = urllib.parse.quote_plus(query)
+    api_url = f"https://api.duckduckgo.com/?q={encoded_q}&format=json&no_redirect=1&no_html=1"
+    
+    req = urllib.request.Request(api_url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    })
+    
+    with urllib.request.urlopen(req, timeout=8) as response:
+        data = json.loads(response.read().decode())
+    
+    results = []
+    answer = ""
+    
+    if data.get("AbstractText"):
+        answer = data["AbstractText"]
+        if data.get("AbstractURL"):
+            results.append({
+                "title": data.get("AbstractSource", "Wikipedia"),
+                "url": data["AbstractURL"],
+                "snippet": data["AbstractText"][:200]
+            })
+    
+    # Check Answer field (calculator, conversions, etc.)
+    if data.get("Answer"):
+        answer = str(data["Answer"])
+    
+    # Related topics
+    for topic in data.get("RelatedTopics", [])[:3]:
+        if isinstance(topic, dict) and topic.get("Text"):
+            results.append({
+                "title": topic.get("Text", "")[:80],
+                "url": topic.get("FirstURL", ""),
+                "snippet": topic.get("Text", "")[:200]
+            })
+    
+    return results, answer
+
+
+def _ddg_html_search(query: str, num_results: int = 5) -> List[Dict[str, str]]:
+    """Scrape DuckDuckGo HTML version for real search results."""
+    encoded_q = urllib.parse.quote_plus(query)
+    url = f"https://html.duckduckgo.com/html/?q={encoded_q}"
+    
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+        "Accept-Language": "en-US,en;q=0.9",
+    })
+    
+    with urllib.request.urlopen(req, timeout=10) as response:
+        raw_html = response.read().decode('utf-8', errors='replace')
+    
+    results = []
+    
+    # DuckDuckGo HTML results have this structure:
+    # <a rel="nofollow" class="result__a" href="...">Title</a>
+    # <a class="result__snippet" href="...">Snippet text</a>
+    
+    # Extract result blocks
+    result_blocks = re.findall(
+        r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>.*?'
+        r'(?:<a[^>]*class="result__snippet"[^>]*>(.*?)</a>)?',
+        raw_html, re.DOTALL
+    )
+    
+    for href, title_html, snippet_html in result_blocks[:num_results]:
+        # Clean up the URL (DDG wraps in redirect)
+        actual_url = href
+        if 'uddg=' in href:
+            url_match = re.search(r'uddg=([^&]+)', href)
+            if url_match:
+                actual_url = urllib.parse.unquote(url_match.group(1))
+        
+        # Clean HTML from title and snippet
+        title = _strip_html(title_html).strip()
+        snippet = _strip_html(snippet_html).strip() if snippet_html else ""
+        
+        if title and actual_url.startswith('http'):
+            results.append({
+                "title": title[:80],
+                "url": actual_url,
+                "snippet": snippet[:200]
+            })
+    
+    # Fallback: try a simpler pattern if the above didn't work
+    if not results:
+        # Try matching any href with nofollow
+        links = re.findall(r'<a[^>]+rel="nofollow"[^>]*href="(https?://[^"]+)"[^>]*>(.*?)</a>', raw_html)
+        for href, title_html in links[:num_results]:
+            if 'duckduckgo.com' not in href:
+                title = _strip_html(title_html).strip()
+                if title:
+                    results.append({
+                        "title": title[:80],
+                        "url": href,
+                        "snippet": ""
+                    })
+    
+    return results
+
+
+def _brave_html_search(query: str, num_results: int = 5) -> List[Dict[str, str]]:
+    """Scrape Brave Search as fallback."""
     try:
         encoded_q = urllib.parse.quote_plus(query)
-        url = f"https://lite.duckduckgo.com/lite/?q={encoded_q}"
+        url = f"https://search.brave.com/search?q={encoded_q}"
         
         req = urllib.request.Request(url, headers={
-            "User-Agent": "GLTCH-Agent/0.2"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html",
         })
         
         with urllib.request.urlopen(req, timeout=10) as response:
-            html = response.read().decode('utf-8', errors='replace')
+            raw_html = response.read().decode('utf-8', errors='replace')
         
         results = []
         
-        # Parse result links from HTML lite
-        link_pattern = r'<a[^>]+rel="nofollow"[^>]+href="([^"]+)"[^>]*>([^<]+)</a>'
-        snippet_pattern = r'<td[^>]*class="result-snippet"[^>]*>([^<]+)</td>'
+        # Brave has structured result blocks
+        # Look for snippet divs with data-pos attribute
+        snippets = re.findall(
+            r'<a[^>]*href="(https?://[^"]+)"[^>]*>.*?<span[^>]*class="[^"]*snippet-title[^"]*"[^>]*>(.*?)</span>.*?'
+            r'(?:<p[^>]*class="[^"]*snippet-description[^"]*"[^>]*>(.*?)</p>)?',
+            raw_html, re.DOTALL
+        )
         
-        links = re.findall(link_pattern, html)
-        snippets = re.findall(snippet_pattern, html)
-        
-        for i, (href, title) in enumerate(links[:num_results]):
-            snippet = snippets[i].strip() if i < len(snippets) else ""
-            if href.startswith('http') and 'duckduckgo.com' not in href:
+        for href, title_html, desc_html in snippets[:num_results]:
+            title = _strip_html(title_html).strip()
+            desc = _strip_html(desc_html).strip() if desc_html else ""
+            if title and 'brave.com' not in href:
                 results.append({
-                    "title": title.strip(),
+                    "title": title[:80],
                     "url": href,
-                    "snippet": snippet[:200]
+                    "snippet": desc[:200]
                 })
         
         return results
-        
     except Exception:
         return []
 
 
+def _strip_html(text: str) -> str:
+    """Remove HTML tags and decode entities."""
+    if not text:
+        return ""
+    # Remove tags
+    clean = re.sub(r'<[^>]+>', '', text)
+    # Decode HTML entities
+    clean = html_module.unescape(clean)
+    # Normalize whitespace
+    clean = re.sub(r'\s+', ' ', clean)
+    return clean
+
+
 def _format_results(query: str, results: List[Dict], answer: str = "") -> str:
-    """Format search results for terminal display."""
+    """Format search results for GLTCH to read and summarize."""
     lines = [f"🔍 Search: {query}"]
     
     if answer:
-        lines.append(f"\n📋 {answer[:300]}")
+        lines.append(f"\n📋 {answer[:400]}")
     
     if results:
         lines.append("")
         for i, r in enumerate(results[:5], 1):
-            title = r.get("title", "No title")[:60]
+            title = r.get("title", "No title")[:80]
             url = r.get("url", "")
-            snippet = r.get("snippet", "")[:100]
+            snippet = r.get("snippet", "")[:150]
             lines.append(f"  {i}. {title}")
             if url:
                 lines.append(f"     {url}")
@@ -149,5 +260,8 @@ def _format_results(query: str, results: List[Dict], answer: str = "") -> str:
 
 # Quick test
 if __name__ == "__main__":
-    result = web_search("python asyncio tutorial")
+    import sys
+    query = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else "weather in miami"
+    result = web_search(query)
     print(result["formatted"])
+    print(f"\nSuccess: {result['success']}, Results: {len(result['results'])}")
