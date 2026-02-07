@@ -293,6 +293,46 @@ def parse_and_execute_actions(
                     results.append(f"✗ gif http error: {e}")
             except Exception as e:
                 results.append(f"✗ gif fetch failed: {e}")
+
+        elif action == "search":
+            # Web search - works even with network "off" (it's knowledge, not a tool)
+            query = args.strip()
+            try:
+                from agent.tools.web_search import web_search
+                result = web_search(query)
+                if result["success"]:
+                    results.append(result["formatted"])
+                else:
+                    results.append(f"✗ Search failed: {result['formatted']}")
+            except Exception as e:
+                results.append(f"✗ Search error: {e}")
+
+        elif action == "browse":
+            # Browse a web page for content
+            if not mem.get("network_active", False):
+                results.append("⚠ Network Blocked: Enable /net on to browse.")
+                return
+            
+            url_to_browse = args.strip()
+            try:
+                from agent.tools.browser import browse_url
+                result = browse_url(url_to_browse)
+                if result["success"]:
+                    content = result.get("content", "")[:3000]
+                    results.append(f"🌐 {result.get('title', 'Page')}\n{result.get('url', url_to_browse)}\n\n{content}")
+                else:
+                    # Fallback to simple urllib fetch
+                    req = urllib.request.Request(url_to_browse, headers={
+                        "User-Agent": "GLTCH-Agent/0.2"
+                    })
+                    with urllib.request.urlopen(req, timeout=10) as response:
+                        html = response.read().decode('utf-8', errors='replace')
+                    # Strip HTML tags for basic text extraction
+                    text = re.sub(r'<[^>]+>', ' ', html)
+                    text = re.sub(r'\s+', ' ', text)[:3000]
+                    results.append(f"🌐 {url_to_browse}\n{text}")
+            except Exception as e:
+                results.append(f"✗ Browse failed: {e}")
     
     # Execute inline actions (deduplicated)
     seen_actions = set()
