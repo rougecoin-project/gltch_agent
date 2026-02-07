@@ -12,6 +12,9 @@ web3>=6.0.0
 # Browser Automation (optional)
 playwright>=1.40.0
 
+# GIF Overlay
+Pillow>=10.0.0
+
 # Development (optional)
 pytest>=7.0.0
 pytest-cov>=4.0.0
