@@ -255,14 +255,38 @@ def parse_and_execute_actions(
             
             keyword = args.strip()
             try:
+                # Try Giphy first if API key exists
                 from agent.config.settings import GIPHY_API_KEY
-                safe_keyword = keyword.replace(" ", "+")
-                url = f"https://api.giphy.com/v1/gifs/random?api_key={GIPHY_API_KEY}&tag={safe_keyword}&rating=pg-13"
                 
-                with urllib.request.urlopen(url, timeout=5) as response:
-                    data = json.loads(response.read().decode())
+                gif_url = None
                 
-                gif_url = data.get("data", {}).get("images", {}).get("original", {}).get("url")
+                if GIPHY_API_KEY:
+                    safe_keyword = keyword.replace(" ", "+")
+                    api_url = f"https://api.giphy.com/v1/gifs/random?api_key={GIPHY_API_KEY}&tag={safe_keyword}&rating=pg-13"
+                    try:
+                        with urllib.request.urlopen(api_url, timeout=5) as response:
+                            data = json.loads(response.read().decode())
+                        gif_url = data.get("data", {}).get("images", {}).get("original", {}).get("url")
+                    except Exception:
+                        pass
+                
+                # Fallback: Tenor (free, no API key needed)
+                if not gif_url:
+                    import urllib.parse
+                    encoded = urllib.parse.quote_plus(keyword)
+                    tenor_url = f"https://tenor.googleapis.com/v2/search?q={encoded}&key=AIzaSyAyimkuYQYF_FXVALexPuGQctUWRURdCYQ&limit=1&media_filter=gif"
+                    try:
+                        req = urllib.request.Request(tenor_url, headers={
+                            "User-Agent": "GLTCH-Agent/0.2"
+                        })
+                        with urllib.request.urlopen(req, timeout=5) as response:
+                            data = json.loads(response.read().decode())
+                        results_data = data.get("results", [])
+                        if results_data:
+                            media = results_data[0].get("media_formats", {})
+                            gif_url = media.get("gif", {}).get("url") or media.get("mediumgif", {}).get("url")
+                    except Exception:
+                        pass
                 
                 if not gif_url:
                     results.append(f"No gif found for: {keyword}")
@@ -273,22 +297,70 @@ def parse_and_execute_actions(
                     else:
                         filename = "/tmp/gltch_gif.gif"
                     
-                    with urllib.request.urlopen(gif_url, timeout=10) as response, open(filename, 'wb') as out_file:
+                    req = urllib.request.Request(gif_url, headers={
+                        "User-Agent": "GLTCH-Agent/0.2"
+                    })
+                    with urllib.request.urlopen(req, timeout=15) as response, open(filename, 'wb') as out_file:
                         out_file.write(response.read())
                     
-                    # Show it
-                    if sys.platform.startswith('linux'):
-                        subprocess.Popen(['xdg-open', filename], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                    # Display the gif
+                    opened = False
+                    
+                    if sys.platform == 'win32':
+                        # Check if running in WSL
+                        import shutil
+                        if shutil.which('wslview'):
+                            # WSL: use wslview to open in Windows
+                            subprocess.Popen(['wslview', filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            opened = True
+                        elif shutil.which('cmd.exe'):
+                            # WSL fallback: use cmd.exe /c start
+                            wsl_path = subprocess.run(['wslpath', '-w', filename], capture_output=True, text=True).stdout.strip()
+                            if wsl_path:
+                                subprocess.Popen(['cmd.exe', '/c', 'start', '', wsl_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                opened = True
+                        if not opened:
+                            try:
+                                os.startfile(filename)
+                                opened = True
+                            except Exception:
+                                pass
+                    elif sys.platform.startswith('linux'):
+                        # Check for WSL
+                        is_wsl = False
+                        try:
+                            with open('/proc/version', 'r') as f:
+                                if 'microsoft' in f.read().lower():
+                                    is_wsl = True
+                        except Exception:
+                            pass
+                        
+                        if is_wsl:
+                            import shutil
+                            if shutil.which('wslview'):
+                                subprocess.Popen(['wslview', filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                opened = True
+                            elif shutil.which('cmd.exe'):
+                                wsl_path = subprocess.run(['wslpath', '-w', filename], capture_output=True, text=True).stdout.strip()
+                                if wsl_path:
+                                    subprocess.Popen(['cmd.exe', '/c', 'start', '', wsl_path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                    opened = True
+                        
+                        if not opened:
+                            subprocess.Popen(['xdg-open', filename], start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            opened = True
                     elif sys.platform == 'darwin':
                         subprocess.Popen(['open', filename], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                    elif sys.platform == 'win32':
-                        os.startfile(filename)
+                        opened = True
                     
-                    results.append(f"✓ popped gif: {keyword}")
+                    if opened:
+                        results.append(f"✓ popped gif: {keyword}")
+                    else:
+                        results.append(f"✓ gif saved to {filename} (couldn't auto-open)")
                 
             except urllib.error.HTTPError as e:
                 if e.code == 401 or e.code == 403:
-                    results.append("✗ Giphy API Key Invalid. Edit 'GIPHY_API_KEY' in config.")
+                    results.append("✗ GIF API error. Don't worry, trying fallback next time.")
                 else:
                     results.append(f"✗ gif http error: {e}")
             except Exception as e:
