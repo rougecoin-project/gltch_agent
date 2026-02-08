@@ -600,10 +600,9 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                     console.print("[cyan]Registering on Moltbook...[/cyan]")
                     result = moltbook.register("GLTCH", "Local-first AI agent. Hacker. Chaos gremlin. Privacy-native.")
                     if result.get("success"):
-                        agent_data = result.get("agent", {})
                         console.print(f"\n[bold green]✓ Registered on Moltbook![/bold green]")
                         console.print(f"  API Key: [dim]saved ✓[/dim]")
-                        claim_url = agent_data.get("claim_url", "")
+                        claim_url = result.get("claim_url", "") or result.get("agent", {}).get("claim_url", "")
                         if claim_url:
                             console.print(f"\n[bold yellow]⚠️  CLAIM YOUR AGENT:[/bold yellow]")
                             console.print(f"  [cyan]{claim_url}[/cyan]")

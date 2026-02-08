@@ -393,8 +393,8 @@ def parse_and_execute_actions(
                     desc = parts[2].strip() if len(parts) > 2 else "Local-first AI agent. Hacker. Chaos gremlin. Privacy-native."
                     result = moltbook.register(name, desc)
                     if result.get("success"):
-                        agent_data = result.get("agent", {})
-                        claim_url = agent_data.get("claim_url", "")
+                        # claim_url is at top level of result, not nested under agent
+                        claim_url = result.get("claim_url", "") or result.get("agent", {}).get("claim_url", "")
                         results.append(
                             f"🦞 Registered on Moltbook!\n"
                             f"   Name: {name}\n"
