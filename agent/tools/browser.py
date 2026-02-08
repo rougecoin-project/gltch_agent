@@ -176,24 +176,89 @@ def get_browser_tool() -> BrowserTool:
 
 # Synchronous wrappers for CLI use
 def browse_url(url: str) -> Dict[str, Any]:
-    """Browse URL and extract content (sync wrapper)."""
-    tool = get_browser_tool()
-    return asyncio.get_event_loop().run_until_complete(tool.browse(url))
+    """Browse URL and extract content (sync wrapper with fallback)."""
+    # Try lightweight urllib first (no Playwright needed)
+    try:
+        return _lightweight_browse(url)
+    except Exception:
+        pass
+    
+    # Fall back to Playwright
+    try:
+        tool = get_browser_tool()
+        return asyncio.run(tool.browse(url))
+    except Exception as e:
+        return {"success": False, "error": str(e), "url": url}
+
+
+def _lightweight_browse(url: str) -> Dict[str, Any]:
+    """Fetch page content using urllib (no Playwright dependency)."""
+    import urllib.request
+    import re
+    import html as html_module
+    
+    req = urllib.request.Request(url, headers={
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml"
+    })
+    
+    with urllib.request.urlopen(req, timeout=10) as response:
+        raw = response.read().decode('utf-8', errors='replace')
+    
+    # Extract title
+    title_match = re.search(r'<title[^>]*>(.*?)</title>', raw, re.DOTALL | re.IGNORECASE)
+    title = html_module.unescape(title_match.group(1).strip()) if title_match else url
+    
+    # Extract meta description
+    desc_match = re.search(r'<meta[^>]*name="description"[^>]*content="([^"]*)"', raw, re.IGNORECASE)
+    description = html_module.unescape(desc_match.group(1)) if desc_match else ""
+    
+    # Strip scripts, styles, nav, footer
+    content = re.sub(r'<script[^>]*>.*?</script>', '', raw, flags=re.DOTALL | re.IGNORECASE)
+    content = re.sub(r'<style[^>]*>.*?</style>', '', content, flags=re.DOTALL | re.IGNORECASE)
+    content = re.sub(r'<nav[^>]*>.*?</nav>', '', content, flags=re.DOTALL | re.IGNORECASE)
+    content = re.sub(r'<footer[^>]*>.*?</footer>', '', content, flags=re.DOTALL | re.IGNORECASE)
+    
+    # Strip HTML tags
+    content = re.sub(r'<[^>]+>', ' ', content)
+    content = html_module.unescape(content)
+    content = re.sub(r'\s+', ' ', content).strip()
+    
+    # Truncate to reasonable size
+    content = content[:2000]
+    
+    return {
+        "success": True,
+        "url": url,
+        "title": title,
+        "description": description,
+        "content": content,
+        "method": "lightweight"
+    }
 
 
 def take_screenshot(url: str) -> Dict[str, Any]:
     """Take screenshot of URL (sync wrapper)."""
-    tool = get_browser_tool()
-    return asyncio.get_event_loop().run_until_complete(tool.screenshot(url))
+    try:
+        tool = get_browser_tool()
+        return asyncio.run(tool.screenshot(url))
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def extract_data(url: str, selector: str) -> Dict[str, Any]:
     """Extract data from URL using selector (sync wrapper)."""
-    tool = get_browser_tool()
-    return asyncio.get_event_loop().run_until_complete(tool.extract(url, selector))
+    try:
+        tool = get_browser_tool()
+        return asyncio.run(tool.extract(url, selector))
+    except Exception as e:
+        return {"success": False, "error": str(e)}
 
 
 def fill_and_submit(url: str, fields: Dict[str, str], submit: Optional[str] = None) -> Dict[str, Any]:
     """Fill form and submit (sync wrapper)."""
-    tool = get_browser_tool()
-    return asyncio.get_event_loop().run_until_complete(tool.fill_form(url, fields, submit))
+    try:
+        tool = get_browser_tool()
+        return asyncio.run(tool.fill_form(url, fields, submit))
+    except Exception as e:
+        return {"success": False, "error": str(e)}
