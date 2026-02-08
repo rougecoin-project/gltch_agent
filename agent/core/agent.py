@@ -133,12 +133,15 @@ class GltchAgent:
         if action_results:
             action_context = "\n".join([r.replace('[', '').replace(']', '') for r in action_results])
             followup_prompt = (
-                f"Here's the output from the action(s) you just ran:\n\n"
-                f"{action_context}\n\n"
-                f"Based on this output, give your analysis or answer to the user's "
-                f"original question. Be specific, concise, and helpful. "
-                f"Do NOT say you can't do something — you just DID it. "
-                f"Summarize what you found."
+                f"SYSTEM: The following is REAL output from a tool you just used. "
+                f"Report ONLY what the data says. Do NOT add action tags. Do NOT re-run actions.\n\n"
+                f"--- TOOL OUTPUT ---\n"
+                f"{action_context}\n"
+                f"--- END OUTPUT ---\n\n"
+                f"Now answer the user's question using ONLY the data above. "
+                f"Do NOT use [ACTION:...] tags in this response. "
+                f"Do NOT make up numbers that aren't in the output. "
+                f"Be brief and natural."
             )
             
             followup_chunks = []
@@ -156,6 +159,12 @@ class GltchAgent:
                 yield chunk
             
             followup_response = strip_thinking("".join(followup_chunks).strip())
+            
+            # Strip any action tags from follow-up (prevent re-triggering)
+            import re as _re
+            followup_response = _re.sub(r'\[ACTION:[^\]]*\]', '', followup_response)
+            followup_response = _re.sub(r'\[MOOD:\w+\]', '', followup_response)
+            followup_response = followup_response.strip()
         
         # Calculate XP
         stats = get_last_stats()

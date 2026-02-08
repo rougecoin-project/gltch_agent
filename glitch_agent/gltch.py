@@ -363,7 +363,17 @@ def main() -> None:
                 if action_results:
                     # Build context with command outputs
                     action_context = "\n".join([r.replace('[', '').replace(']', '') for r in action_results])
-                    followup_prompt = f"Here's the output from the command(s) you just ran:\n\n{action_context}\n\nBased on this output, give your analysis or answer to the user's original question. Be specific and actionable."
+                    followup_prompt = (
+                        f"SYSTEM: The following is REAL output from a tool you just used. "
+                        f"Report ONLY what the data says. Do NOT add action tags. Do NOT re-run actions.\n\n"
+                        f"--- TOOL OUTPUT ---\n"
+                        f"{action_context}\n"
+                        f"--- END OUTPUT ---\n\n"
+                        f"Now answer the user's question using ONLY the data above. "
+                        f"Do NOT use [ACTION:...] tags in this response. "
+                        f"Do NOT make up numbers that aren't in the output. "
+                        f"Be brief and natural."
+                    )
                     
                     followup_chunks = []
                     with Live(Text.from_markup(f"{prefix}[dim]analyzing output...[/dim]"), console=console, refresh_per_second=10, transient=True) as live:
@@ -384,6 +394,13 @@ def main() -> None:
                     
                     followup_response = "".join(followup_chunks).strip()
                     followup_clean = strip_thinking(followup_response)
+                    
+                    # Strip action/mood tags from follow-up (prevent re-triggering)
+                    import re as _re
+                    followup_clean = _re.sub(r'\[ACTION:[^\]]*\]', '', followup_clean)
+                    followup_clean = _re.sub(r'\[MOOD:\w+\]', '', followup_clean)
+                    followup_clean = followup_clean.strip()
+                    
                     if followup_clean:
                         console.print(f"{prefix}{followup_clean}")
                         
