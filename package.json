@@ -1,7 +1,7 @@
 {
   "name": "gltch",
-  "version": "0.2.1-beta.1",
-  "description": "Local-first AI agent with personality. Runs on your machine, thinks for herself.",
+  "version": "0.3.0",
+  "description": "Local-first AI agent with personality. Multi-channel messaging, voice, native apps, and blockchain integration.",
   "type": "module",
   "keywords": [
     "ai",
@@ -13,7 +13,16 @@
     "cyberpunk",
     "mcp",
     "moltbook",
-    "tikclawk"
+    "tikclawk",
+    "discord",
+    "telegram",
+    "slack",
+    "whatsapp",
+    "signal",
+    "tts",
+    "voice",
+    "crypto",
+    "web3"
   ],
   "author": "cyberdreadx",
   "license": "MIT",
@@ -29,6 +38,7 @@
     "bin/",
     "agent/**/*.py",
     "gateway/",
+    "apps/",
     "ui/dist/",
     "requirements.txt",
     "gltch.py",

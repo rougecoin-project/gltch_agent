@@ -1,6 +1,6 @@
 {
   "name": "@gltch/gateway",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "GLTCH Gateway - WebSocket hub for multi-channel messaging",
   "type": "module",
   "main": "dist/index.js",
@@ -22,6 +22,12 @@
     "express": "^4.18.2",
     "ws": "^8.16.0"
   },
+  "optionalDependencies": {
+    "@hapi/boom": "^10.0.1",
+    "@slack/bolt": "^3.17.1",
+    "@whiskeysockets/baileys": "^6.7.0",
+    "eventsource": "^2.0.2"
+  },
   "devDependencies": {
     "@types/cors": "^2.8.17",
     "@types/express": "^4.17.21",
@@ -29,7 +35,7 @@
     "@types/ws": "^8.5.10",
     "@typescript-eslint/eslint-plugin": "^8.32.0",
     "@typescript-eslint/parser": "^8.32.0",
-    "discord.js": "^14.25.1",
+    "discord.js": "^13.17.1",
     "eslint": "^9.39.0",
     "grammy": "^1.39.3",
     "tsx": "^4.6.0",

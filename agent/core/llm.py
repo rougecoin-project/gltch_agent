@@ -12,7 +12,7 @@ from typing import List, Dict, Generator, Any
 
 from agent.config.settings import (
     LOCAL_URL, LOCAL_MODEL, LOCAL_CTX, LOCAL_BACKEND,
-    REMOTE_URL, REMOTE_MODEL, REMOTE_CTX, REMOTE_BACKEND,
+    REMOTE_URL, REMOTE_MODEL, REMOTE_CTX, REMOTE_BACKEND, REMOTE_STREAM,
     OPENAI_API_KEY, OPENAI_URL, OPENAI_MODEL, OPENAI_CTX,
     TIMEOUT
 )
@@ -385,10 +385,15 @@ def stream_llm(
         
         # Base payload
         from agent.config.settings import TEMPERATURE
+        # Disable streaming for remote if configured (reduces latency over WAN)
+        should_stream = True
+        if use_remote and not REMOTE_STREAM:
+            should_stream = False
+        
         payload = {
             "model": model,
             "messages": messages,
-            "stream": True,
+            "stream": should_stream,
             "temperature": TEMPERATURE,
         }
         
@@ -414,6 +419,29 @@ def stream_llm(
                 headers=headers,
                 method="POST"
             )
+            
+            # Non-streaming mode for remote (faster over high-latency connections)
+            if not should_stream:
+                with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+                    data = json.loads(resp.read().decode("utf-8"))
+                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    elapsed_ms = int((time.time() - start_time) * 1000)
+                    usage = data.get("usage", {})
+                    completion_tokens = usage.get("completion_tokens", len(content) // 4)
+                    prompt_tokens = usage.get("prompt_tokens", est_prompt_tokens)
+                    last_stats = {
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": prompt_tokens + completion_tokens,
+                        "context_used": prompt_tokens + completion_tokens,
+                        "context_max": ctx_max,
+                        "time_ms": elapsed_ms,
+                        "tokens_per_sec": round(completion_tokens / (elapsed_ms / 1000), 1) if elapsed_ms > 0 else 0,
+                        "model": model
+                    }
+                    # Yield entire response at once
+                    yield content
+                    return
             
             # Start streaming
             with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
