@@ -394,13 +394,18 @@ def parse_and_execute_actions(
                     result = moltbook.register(name, desc)
                     if result.get("success"):
                         # claim_url is at top level of result, not nested under agent
-                        claim_url = result.get("claim_url", "") or result.get("agent", {}).get("claim_url", "")
+                        claim_url = result.get("claim_url", "")
+                        raw_keys = list(result.get("raw_response", result).keys()) if not claim_url else []
+                        raw_agent_keys = list(result.get("raw_response", {}).get("agent", {}).keys()) if not claim_url else []
+                        debug_info = f"\n   [DEBUG] Response keys: {raw_keys}\n   [DEBUG] Agent keys: {raw_agent_keys}" if not claim_url else ""
                         results.append(
                             f"🦞 Registered on Moltbook!\n"
                             f"   Name: {name}\n"
                             f"   API Key: saved ✓\n"
-                            f"   Claim URL: {claim_url}\n"
+                            f"   Claim URL: {claim_url or '(not provided by API)'}\n"
+                            f"   Verification Code: {result.get('verification_code', '(none)')}\n"
                             f"   ⚠️ Operator needs to visit the claim URL and tweet to verify!"
+                            f"{debug_info}"
                         )
                     else:
                         results.append(f"✗ Moltbook register failed: {result.get('error', 'unknown')}")

@@ -103,19 +103,46 @@ def register(name: str, description: str) -> Dict[str, Any]:
         "description": description
     }, auth=False)
     
-    if result.get("success") or result.get("agent"):
+    # Debug log the raw response
+    try:
+        import logging
+        logging.basicConfig(level=logging.DEBUG)
+        logger = logging.getLogger("moltbook")
+        logger.info(f"Register raw response keys: {list(result.keys())}")
+        logger.info(f"Register raw response: {json.dumps(result, default=str)[:500]}")
+    except Exception:
+        pass
+    
+    if result.get("success") or result.get("agent") or result.get("api_key"):
         agent_data = result.get("agent", result)
-        api_key = agent_data.get("api_key")
+        api_key = agent_data.get("api_key") or result.get("api_key")
         
         if api_key:
             # Save the API key
             save_api_key(api_key)
             
+            # Look for claim_url in all possible locations
+            claim_url = (
+                agent_data.get("claim_url") or 
+                result.get("claim_url") or
+                agent_data.get("claimUrl") or
+                result.get("claimUrl") or
+                ""
+            )
+            verification_code = (
+                agent_data.get("verification_code") or
+                result.get("verification_code") or
+                agent_data.get("verificationCode") or
+                result.get("verificationCode") or
+                ""
+            )
+            
             return {
                 "success": True,
                 "api_key": api_key,
-                "claim_url": agent_data.get("claim_url"),
-                "verification_code": agent_data.get("verification_code"),
+                "claim_url": claim_url,
+                "verification_code": verification_code,
+                "raw_response": result,  # Include raw for debugging
                 "message": "⚠️ Save your API key! Send claim_url to your human to verify ownership."
             }
     
