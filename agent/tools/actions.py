@@ -494,6 +494,128 @@ def parse_and_execute_actions(
             except Exception as e:
                 results.append(f"✗ Moltbook error: {e}")
     
+        elif action == "opencode":
+            # OpenCode coding agent integration
+            parts = args.split("|", 2)
+            sub_action = parts[0].strip().lower() if parts else ""
+            
+            try:
+                from agent.tools import opencode
+                
+                if sub_action == "code":
+                    # Send a coding request
+                    prompt = parts[1].strip() if len(parts) > 1 else args
+                    if not prompt or prompt == sub_action:
+                        results.append("✗ OpenCode: provide a coding prompt, e.g. [ACTION:opencode|code|build a flask API]")
+                        return
+                    project = parts[2].strip() if len(parts) > 2 else None
+                    response_text, project_name = opencode.code(prompt, project=project)
+                    if project_name:
+                        results.append(f"💻 OpenCode [{project_name}]:\n{response_text}")
+                    else:
+                        results.append(f"💻 OpenCode:\n{response_text}")
+                
+                elif sub_action == "status":
+                    if opencode.is_available():
+                        results.append("💻 OpenCode is online and ready.")
+                    else:
+                        results.append("✗ OpenCode is not running. Start it with: opencode serve")
+                
+                elif sub_action == "sessions":
+                    sessions = opencode.list_sessions()
+                    if sessions:
+                        session_text = "💻 OpenCode Sessions:\n"
+                        for s in sessions:
+                            sid = s.get("id", "?")[:8]
+                            title = s.get("title", "Untitled")
+                            session_text += f"  • {sid}… — {title}\n"
+                        results.append(session_text)
+                    else:
+                        results.append("💻 No active OpenCode sessions.")
+                
+                elif sub_action == "undo":
+                    result = opencode.undo_last()
+                    results.append(f"💻 {result}")
+                
+                elif sub_action == "redo":
+                    result = opencode.redo_last()
+                    results.append(f"💻 {result}")
+                
+                elif sub_action == "compact":
+                    result = opencode.compact_session()
+                    results.append(f"💻 {result}")
+                
+                elif sub_action == "models":
+                    models = opencode.get_models()
+                    if isinstance(models, list):
+                        model_text = "💻 OpenCode Models:\n"
+                        for m in models:
+                            if isinstance(m, dict):
+                                model_text += f"  • {m.get('id', m.get('name', '?'))}\n"
+                            else:
+                                model_text += f"  • {m}\n"
+                        results.append(model_text)
+                    else:
+                        results.append(f"💻 {models}")
+                
+                elif sub_action == "switch_model":
+                    model_id = parts[1].strip() if len(parts) > 1 else ""
+                    if not model_id:
+                        results.append("✗ Specify model: [ACTION:opencode|switch_model|provider/model-name]")
+                        return
+                    result = opencode.switch_model(model_id)
+                    results.append(f"💻 {result}")
+                
+                elif sub_action == "agents":
+                    agents = opencode.get_agents()
+                    if isinstance(agents, list):
+                        agent_text = "💻 OpenCode Agents:\n"
+                        for a in agents:
+                            if isinstance(a, dict):
+                                agent_text += f"  • {a.get('id', a.get('name', '?'))}\n"
+                            else:
+                                agent_text += f"  • {a}\n"
+                        results.append(agent_text)
+                    else:
+                        results.append(f"💻 {agents}")
+                
+                elif sub_action == "switch_agent":
+                    agent_id = parts[1].strip() if len(parts) > 1 else ""
+                    if not agent_id:
+                        results.append("✗ Specify agent: [ACTION:opencode|switch_agent|plan]")
+                        return
+                    result = opencode.switch_agent(agent_id)
+                    results.append(f"💻 {result}")
+                
+                elif sub_action == "share":
+                    result = opencode.share_session()
+                    results.append(f"💻 {result}")
+                
+                elif sub_action == "init":
+                    path = parts[1].strip() if len(parts) > 1 else None
+                    result = opencode.init_project(path)
+                    results.append(f"💻 {result}")
+                
+                elif sub_action == "config":
+                    result = opencode.get_config()
+                    results.append(f"💻 OpenCode Config:\n{json.dumps(result, indent=2) if isinstance(result, dict) else result}")
+                
+                elif sub_action == "projects":
+                    projects = opencode.list_projects()
+                    if projects:
+                        proj_text = "💻 Workspace Projects:\n"
+                        for p in projects:
+                            proj_text += f"  • {p}\n"
+                        results.append(proj_text)
+                    else:
+                        results.append("💻 No projects in workspace yet.")
+                
+                else:
+                    results.append(f"✗ Unknown opencode action: {sub_action}. Try: code, status, sessions, undo, redo, compact, models, switch_model, agents, switch_agent, share, init, config, projects")
+            
+            except Exception as e:
+                results.append(f"✗ OpenCode error: {e}")
+    
     # Execute inline actions (deduplicated)
     seen_actions = set()
     for match in re.finditer(action_pattern, response):
