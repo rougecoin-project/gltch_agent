@@ -16,36 +16,74 @@ from datetime import datetime
 MOLTBOOK_API_BASE = "https://www.moltbook.com/api/v1"
 MOLTBOOK_ENABLED = os.environ.get("MOLTBOOK_ENABLED", "true").lower() == "true"
 
+# Credentials file — separate from memory.json to avoid race conditions
+CRED_DIR = os.path.join(os.path.expanduser("~"), ".config", "gltch")
+CRED_FILE = os.path.join(CRED_DIR, "moltbook_credentials.json")
+
 
 def get_api_key() -> Optional[str]:
-    """Get Moltbook API key from memory or environment."""
+    """Get Moltbook API key from credentials file or environment."""
     # Check environment first
     key = os.environ.get("MOLTBOOK_API_KEY")
     if key:
         return key
     
-    # Check memory file
+    # Check dedicated credentials file
+    try:
+        if os.path.exists(CRED_FILE):
+            with open(CRED_FILE, "r", encoding="utf-8") as f:
+                creds = json.load(f)
+                return creds.get("api_key")
+    except Exception:
+        pass
+    
+    # Legacy: check memory.json (migrate if found)
     try:
         from agent.memory.store import load_memory
         mem = load_memory()
-        keys = mem.get("api_keys", {})
-        return keys.get("moltbook")
+        key = mem.get("api_keys", {}).get("moltbook")
+        if key:
+            save_api_key(key)  # Migrate to credentials file
+            return key
     except Exception:
-        return None
+        pass
+    
+    return None
 
 
 def save_api_key(api_key: str) -> bool:
-    """Save Moltbook API key to memory."""
+    """Save Moltbook API key to dedicated credentials file."""
     try:
-        from agent.memory.store import load_memory, save_memory
-        mem = load_memory()
-        if "api_keys" not in mem:
-            mem["api_keys"] = {}
-        mem["api_keys"]["moltbook"] = api_key
-        save_memory(mem)
+        os.makedirs(CRED_DIR, exist_ok=True)
+        
+        # Load existing creds or create new
+        creds = {}
+        if os.path.exists(CRED_FILE):
+            try:
+                with open(CRED_FILE, "r", encoding="utf-8") as f:
+                    creds = json.load(f)
+            except Exception:
+                pass
+        
+        creds["api_key"] = api_key
+        creds["saved_at"] = datetime.now().isoformat()
+        
+        with open(CRED_FILE, "w", encoding="utf-8") as f:
+            json.dump(creds, f, indent=2)
+        
         return True
-    except Exception:
-        return False
+    except Exception as e:
+        # Fallback: try memory.json
+        try:
+            from agent.memory.store import load_memory, save_memory
+            mem = load_memory()
+            if "api_keys" not in mem:
+                mem["api_keys"] = {}
+            mem["api_keys"]["moltbook"] = api_key
+            save_memory(mem)
+            return True
+        except Exception:
+            return False
 
 
 def _request(
