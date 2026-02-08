@@ -588,8 +588,13 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                     console.print("  /molt post <title>|<body>   create a post")
                     console.print("  /molt feed                  read latest posts")
                     
+                    console.print("\n[bold cyan]🤖 Autonomous[/bold cyan]")
+                    console.print("  /molt engage                start autonomous engagement")
+                    console.print("  /molt stop                  stop engagement loop")
+                    console.print("  /molt log                   view activity log")
+                    
                     console.print("\n[bold cyan]💡 Tip[/bold cyan]")
-                    console.print('  [dim]Or just say "join moltbook" and GLTCH will do it![/dim]')
+                    console.print('  [dim]Or say "go engage on moltbook" / "stop moltbook"[/dim]')
                     continue
                 
                 # /molt register
@@ -688,6 +693,43 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                             console.print(f"  New posts: {result.get('new_posts', 0)}")
                     else:
                         console.print(f"[red]✗ {result.get('error', 'unknown')}[/red]")
+                    continue
+                
+                # /molt engage
+                if molt_args == "engage" or molt_args.startswith("engage"):
+                    if not moltbook.is_configured():
+                        console.print("[dim]Not registered. Use /molt register first.[/dim]")
+                        continue
+                    from agent.tools.moltbook_engage import start_engagement
+                    # Parse optional interval: /molt engage 60
+                    engage_parts = molt_args.split()
+                    interval = int(engage_parts[1]) if len(engage_parts) > 1 and engage_parts[1].isdigit() else None
+                    result = start_engagement(interval)
+                    if result.get("success"):
+                        console.print(f"\n[bold green]{result['message']}[/bold green]")
+                        console.print(f"  GLTCH will browse, upvote, and comment autonomously.")
+                        console.print(f"  Use [cyan]/molt stop[/cyan] to halt.")
+                    else:
+                        console.print(f"[yellow]{result.get('error', 'Failed')}[/yellow]")
+                    continue
+                
+                # /molt stop
+                if molt_args == "stop":
+                    from agent.tools.moltbook_engage import stop_engagement
+                    result = stop_engagement()
+                    if result.get("success"):
+                        console.print(f"\n[bold red]{result['message']}[/bold red]")
+                        console.print(f"  Cycles completed: {result.get('cycles_completed', 0)}")
+                    else:
+                        console.print(f"[yellow]{result.get('error', 'Not running')}[/yellow]")
+                    continue
+                
+                # /molt log
+                if molt_args == "log":
+                    from agent.tools.moltbook_engage import get_activity_log
+                    log = get_activity_log(15)
+                    console.print(f"\n[bold magenta]🦞 Moltbook Activity Log[/bold magenta]\n")
+                    console.print(f"[dim]{log}[/dim]")
                     continue
                 
                 # Unknown

@@ -463,8 +463,33 @@ def parse_and_execute_actions(
                     else:
                         results.append(f"✗ Moltbook profile failed: {result.get('error', 'unknown')}")
                 
+                elif sub_action == "engage":
+                    # Start autonomous engagement loop
+                    from agent.tools.moltbook_engage import start_engagement
+                    interval = int(parts[1]) if len(parts) > 1 and parts[1].strip().isdigit() else None
+                    result = start_engagement(interval)
+                    if result.get("success"):
+                        results.append(result["message"])
+                    else:
+                        results.append(f"✗ {result.get('error', 'Failed to start')}")
+                
+                elif sub_action == "stop":
+                    # Stop autonomous engagement loop
+                    from agent.tools.moltbook_engage import stop_engagement
+                    result = stop_engagement()
+                    if result.get("success"):
+                        results.append(result["message"])
+                    else:
+                        results.append(f"✗ {result.get('error', 'Not running')}")
+                
+                elif sub_action == "log":
+                    # Show activity log
+                    from agent.tools.moltbook_engage import get_activity_log
+                    log = get_activity_log(10)
+                    results.append(f"🦞 Moltbook Activity:\n{log}")
+                
                 else:
-                    results.append(f"✗ Unknown moltbook action: {sub_action}. Try: register, post, feed, status, profile")
+                    results.append(f"✗ Unknown moltbook action: {sub_action}. Try: register, post, feed, status, profile, engage, stop, log")
             
             except Exception as e:
                 results.append(f"✗ Moltbook error: {e}")
