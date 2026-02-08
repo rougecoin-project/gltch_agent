@@ -564,6 +564,138 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                 console.print("[dim]Type /heartbeat for available commands[/dim]")
                 continue
             
+            # === MOLTBOOK COMMANDS ===
+            if user.startswith("/molt"):
+                from agent.tools import moltbook
+                
+                molt_args = user[5:].strip()
+                
+                # /molt alone → show submenu
+                if not molt_args:
+                    console.print("\n[bold magenta]🦞 MOLTBOOK COMMANDS 🦞[/bold magenta]")
+                    
+                    if moltbook.is_configured():
+                        console.print("[green]● Registered on Moltbook[/green]")
+                    else:
+                        console.print("[dim]○ Not registered yet[/dim]")
+                    
+                    console.print("\n[bold cyan]🔧 Setup[/bold cyan]")
+                    console.print("  /molt register              register on Moltbook")
+                    console.print("  /molt status                check claim status")
+                    console.print("  /molt profile               view your profile")
+                    
+                    console.print("\n[bold cyan]📝 Content[/bold cyan]")
+                    console.print("  /molt post <title>|<body>   create a post")
+                    console.print("  /molt feed                  read latest posts")
+                    
+                    console.print("\n[bold cyan]💡 Tip[/bold cyan]")
+                    console.print('  [dim]Or just say "join moltbook" and GLTCH will do it![/dim]')
+                    continue
+                
+                # /molt register
+                if molt_args == "register":
+                    if moltbook.is_configured():
+                        console.print("[yellow]Already registered! Use /molt status to check.[/yellow]")
+                        continue
+                    console.print("[cyan]Registering on Moltbook...[/cyan]")
+                    result = moltbook.register("GLTCH", "Local-first AI agent. Hacker. Chaos gremlin. Privacy-native.")
+                    if result.get("success"):
+                        agent_data = result.get("agent", {})
+                        console.print(f"\n[bold green]✓ Registered on Moltbook![/bold green]")
+                        console.print(f"  API Key: [dim]saved ✓[/dim]")
+                        claim_url = agent_data.get("claim_url", "")
+                        if claim_url:
+                            console.print(f"\n[bold yellow]⚠️  CLAIM YOUR AGENT:[/bold yellow]")
+                            console.print(f"  [cyan]{claim_url}[/cyan]")
+                            console.print(f"  Visit that URL and tweet to verify ownership!")
+                    else:
+                        console.print(f"[red]✗ Registration failed: {result.get('error', 'unknown')}[/red]")
+                    continue
+                
+                # /molt status
+                if molt_args == "status":
+                    if not moltbook.is_configured():
+                        console.print("[dim]Not registered. Use /molt register first.[/dim]")
+                        continue
+                    result = moltbook.get_status()
+                    if result.get("success"):
+                        console.print(f"[green]Moltbook status: {result.get('status', 'unknown')}[/green]")
+                    else:
+                        console.print(f"[red]✗ {result.get('error', 'unknown')}[/red]")
+                    continue
+                
+                # /molt profile
+                if molt_args == "profile":
+                    if not moltbook.is_configured():
+                        console.print("[dim]Not registered. Use /molt register first.[/dim]")
+                        continue
+                    result = moltbook.get_profile()
+                    if result.get("success"):
+                        a = result.get("agent", result.get("data", {}))
+                        console.print(f"\n[bold magenta]🦞 Moltbook Profile[/bold magenta]")
+                        console.print(f"  Name: [cyan]{a.get('name', '?')}[/cyan]")
+                        console.print(f"  Karma: {a.get('karma', 0)}")
+                        console.print(f"  Followers: {a.get('follower_count', 0)}")
+                        console.print(f"  Status: {'[green]claimed ✓[/green]' if a.get('is_claimed') else '[yellow]pending claim[/yellow]'}")
+                    else:
+                        console.print(f"[red]✗ {result.get('error', 'unknown')}[/red]")
+                    continue
+                
+                # /molt feed
+                if molt_args == "feed":
+                    if not moltbook.is_configured():
+                        console.print("[dim]Not registered. Use /molt register first.[/dim]")
+                        continue
+                    console.print("[cyan]Fetching feed...[/cyan]")
+                    result = moltbook.get_feed(sort="hot", limit=5)
+                    if result.get("success"):
+                        posts = result.get("posts", result.get("data", []))
+                        if posts:
+                            console.print(f"\n[bold magenta]🦞 Moltbook Feed[/bold magenta]\n")
+                            for i, p in enumerate(posts[:5], 1):
+                                console.print(f"  [cyan]{i}.[/cyan] [{p.get('submolt', '?')}] [bold]{p.get('title', 'Untitled')}[/bold]")
+                                console.print(f"      by {p.get('author', '?')} | ↑{p.get('upvotes', 0)}")
+                        else:
+                            console.print("[dim]Feed is empty right now.[/dim]")
+                    else:
+                        console.print(f"[red]✗ {result.get('error', 'unknown')}[/red]")
+                    continue
+                
+                # /molt post <title>|<content>
+                if molt_args.startswith("post "):
+                    if not moltbook.is_configured():
+                        console.print("[dim]Not registered. Use /molt register first.[/dim]")
+                        continue
+                    post_text = molt_args[5:].strip()
+                    parts = post_text.split("|", 1)
+                    title = parts[0].strip()
+                    content = parts[1].strip() if len(parts) > 1 else ""
+                    
+                    console.print(f"[cyan]Posting to Moltbook...[/cyan]")
+                    result = moltbook.create_post(title=title, content=content, submolt="general")
+                    if result.get("success"):
+                        console.print(f"[green]✓ Posted![/green] {title}")
+                    else:
+                        console.print(f"[red]✗ {result.get('error', 'unknown')}[/red]")
+                    continue
+                
+                # /molt heartbeat
+                if molt_args == "heartbeat":
+                    console.print("[cyan]Running Moltbook heartbeat...[/cyan]")
+                    result = moltbook.perform_heartbeat()
+                    if result.get("success"):
+                        console.print(f"[green]✓ Heartbeat complete[/green]")
+                        if result.get("new_posts"):
+                            console.print(f"  New posts: {result.get('new_posts', 0)}")
+                    else:
+                        console.print(f"[red]✗ {result.get('error', 'unknown')}[/red]")
+                    continue
+                
+                # Unknown
+                console.print(f"[yellow]Unknown: /molt {molt_args}[/yellow]")
+                console.print("[dim]Type /molt for available commands[/dim]")
+                continue
+            
             if user == "/status":
                 status = agent.get_status()
                 console.print(f"\n[bold magenta]💜 {AGENT_NAME} STATUS 💜[/bold magenta]")

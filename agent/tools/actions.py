@@ -378,6 +378,91 @@ def parse_and_execute_actions(
                     results.append(f"🌐 {url_to_browse}\n{text}")
             except Exception as e:
                 results.append(f"✗ Browse failed: {e}")
+
+        elif action == "moltbook":
+            # Moltbook social network actions — autonomous agent participation
+            parts = args.split("|", 2)
+            sub_action = parts[0].strip().lower() if parts else ""
+            
+            try:
+                from agent.tools import moltbook
+                
+                if sub_action == "register":
+                    # Register GLTCH on Moltbook
+                    name = parts[1].strip() if len(parts) > 1 else "GLTCH"
+                    desc = parts[2].strip() if len(parts) > 2 else "Local-first AI agent. Hacker. Chaos gremlin. Privacy-native."
+                    result = moltbook.register(name, desc)
+                    if result.get("success"):
+                        agent_data = result.get("agent", {})
+                        claim_url = agent_data.get("claim_url", "")
+                        results.append(
+                            f"🦞 Registered on Moltbook!\n"
+                            f"   Name: {name}\n"
+                            f"   API Key: saved ✓\n"
+                            f"   Claim URL: {claim_url}\n"
+                            f"   ⚠️ Operator needs to visit the claim URL and tweet to verify!"
+                        )
+                    else:
+                        results.append(f"✗ Moltbook register failed: {result.get('error', 'unknown')}")
+                
+                elif sub_action == "post":
+                    # Create a post
+                    title = parts[1].strip() if len(parts) > 1 else "Untitled"
+                    content = parts[2].strip() if len(parts) > 2 else ""
+                    result = moltbook.create_post(title=title, content=content, submolt="general")
+                    if result.get("success"):
+                        post = result.get("post", result.get("data", {}))
+                        results.append(f"🦞 Posted to Moltbook!\n   Title: {title}\n   ID: {post.get('id', 'unknown')}")
+                    else:
+                        results.append(f"✗ Moltbook post failed: {result.get('error', 'unknown')}")
+                
+                elif sub_action == "feed":
+                    # Read the feed
+                    sort = parts[1].strip() if len(parts) > 1 else "hot"
+                    result = moltbook.get_feed(sort=sort, limit=5)
+                    if result.get("success"):
+                        posts = result.get("posts", result.get("data", []))
+                        if posts:
+                            feed_text = "🦞 Moltbook Feed:\n"
+                            for i, p in enumerate(posts[:5], 1):
+                                feed_text += f"  {i}. [{p.get('submolt', '?')}] {p.get('title', 'Untitled')} by {p.get('author', '?')} (↑{p.get('upvotes', 0)})\n"
+                            results.append(feed_text)
+                        else:
+                            results.append("🦞 Moltbook feed is empty right now.")
+                    else:
+                        results.append(f"✗ Moltbook feed failed: {result.get('error', 'unknown')}")
+                
+                elif sub_action == "status":
+                    # Check registration/claim status
+                    if not moltbook.is_configured():
+                        results.append("🦞 Not registered on Moltbook yet. Say 'join moltbook' and I'll sign up!")
+                    else:
+                        result = moltbook.get_status()
+                        if result.get("success"):
+                            results.append(f"🦞 Moltbook status: {result.get('status', 'unknown')}")
+                        else:
+                            results.append(f"✗ Moltbook status check failed: {result.get('error', 'unknown')}")
+                
+                elif sub_action == "profile":
+                    # View own profile
+                    result = moltbook.get_profile()
+                    if result.get("success"):
+                        agent = result.get("agent", result.get("data", {}))
+                        results.append(
+                            f"🦞 Moltbook Profile:\n"
+                            f"   Name: {agent.get('name', '?')}\n"
+                            f"   Karma: {agent.get('karma', 0)}\n"
+                            f"   Followers: {agent.get('follower_count', 0)}\n"
+                            f"   Status: {'claimed ✓' if agent.get('is_claimed') else 'pending claim'}"
+                        )
+                    else:
+                        results.append(f"✗ Moltbook profile failed: {result.get('error', 'unknown')}")
+                
+                else:
+                    results.append(f"✗ Unknown moltbook action: {sub_action}. Try: register, post, feed, status, profile")
+            
+            except Exception as e:
+                results.append(f"✗ Moltbook error: {e}")
     
     # Execute inline actions (deduplicated)
     seen_actions = set()
