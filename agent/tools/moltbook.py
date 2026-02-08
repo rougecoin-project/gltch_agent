@@ -135,56 +135,67 @@ def register(name: str, description: str) -> Dict[str, Any]:
     """
     Register a new agent on Moltbook.
     Returns API key and claim URL for human verification.
+    
+    Official API response format (from skill.md):
+    {"agent": {"api_key": "moltbook_xxx", "claim_url": "https://...", "verification_code": "reef-X4B2"}}
     """
     result = _request("POST", "/agents/register", {
         "name": name,
         "description": description
     }, auth=False)
     
-    # Debug log the raw response
-    try:
-        import logging
-        logging.basicConfig(level=logging.DEBUG)
-        logger = logging.getLogger("moltbook")
-        logger.info(f"Register raw response keys: {list(result.keys())}")
-        logger.info(f"Register raw response: {json.dumps(result, default=str)[:500]}")
-    except Exception:
-        pass
+    # API returns agent data nested under "agent" key
+    agent_data = result.get("agent", result)
+    api_key = agent_data.get("api_key") or result.get("api_key")
     
-    if result.get("success") or result.get("agent") or result.get("api_key"):
-        agent_data = result.get("agent", result)
-        api_key = agent_data.get("api_key") or result.get("api_key")
+    if api_key:
+        # Save API key + all claim info to credentials file
+        claim_url = agent_data.get("claim_url", "") or result.get("claim_url", "") or ""
+        verification_code = agent_data.get("verification_code", "") or result.get("verification_code", "") or ""
         
-        if api_key:
-            # Save the API key
-            save_api_key(api_key)
-            
-            # Look for claim_url in all possible locations
-            claim_url = (
-                agent_data.get("claim_url") or 
-                result.get("claim_url") or
-                agent_data.get("claimUrl") or
-                result.get("claimUrl") or
-                ""
-            )
-            verification_code = (
-                agent_data.get("verification_code") or
-                result.get("verification_code") or
-                agent_data.get("verificationCode") or
-                result.get("verificationCode") or
-                ""
-            )
-            
-            return {
-                "success": True,
-                "api_key": api_key,
-                "claim_url": claim_url,
-                "verification_code": verification_code,
-                "raw_response": result,  # Include raw for debugging
-                "message": "⚠️ Save your API key! Send claim_url to your human to verify ownership."
-            }
+        _save_credentials({
+            "api_key": api_key,
+            "agent_name": name,
+            "claim_url": claim_url,
+            "verification_code": verification_code,
+            "registered_at": datetime.now().isoformat()
+        })
+        
+        return {
+            "success": True,
+            "api_key": api_key,
+            "claim_url": claim_url,
+            "verification_code": verification_code,
+            "agent_name": name,
+            "message": "⚠️ Save your API key! Send claim_url to your human to verify ownership."
+        }
     
     return result
+
+
+def _save_credentials(data: Dict[str, Any]) -> bool:
+    """Save all Moltbook credentials (API key + claim info) to dedicated file."""
+    try:
+        os.makedirs(CRED_DIR, exist_ok=True)
+        
+        # Load existing creds or create new
+        creds = {}
+        if os.path.exists(CRED_FILE):
+            try:
+                with open(CRED_FILE, "r", encoding="utf-8") as f:
+                    creds = json.load(f)
+            except Exception:
+                pass
+        
+        creds.update(data)
+        creds["saved_at"] = datetime.now().isoformat()
+        
+        with open(CRED_FILE, "w", encoding="utf-8") as f:
+            json.dump(creds, f, indent=2)
+        
+        return True
+    except Exception:
+        return False
 
 
 def get_status() -> Dict[str, Any]:
