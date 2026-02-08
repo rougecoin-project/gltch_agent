@@ -33,6 +33,31 @@ def web_search(query: str, num_results: int = 5) -> Dict[str, Any]:
     results = []
     answer = ""
     
+    # Special handler: Weather queries → use wttr.in for real data
+    weather_match = re.search(r'weather\s+(?:in\s+)?(.+)', query, re.IGNORECASE)
+    if not weather_match:
+        weather_match = re.search(r'(?:temperature|forecast|rain|snow)\s+(?:in\s+)?(.+)', query, re.IGNORECASE)
+    
+    if weather_match:
+        location = weather_match.group(1).strip().rstrip('?.')
+        weather_data = _get_weather(location)
+        if weather_data:
+            answer = weather_data
+            results.append({
+                "title": f"Weather in {location}",
+                "url": f"https://wttr.in/{urllib.parse.quote(location)}",
+                "snippet": weather_data
+            })
+            # Return early with real weather data
+            formatted = _format_results(query, results, answer)
+            return {
+                "success": True,
+                "query": query,
+                "results": results,
+                "answer": answer,
+                "formatted": formatted
+            }
+    
     # Strategy 1: DuckDuckGo Instant Answer API (fast, good for definitions)
     try:
         api_results, api_answer = _ddg_instant_answer(query)
@@ -63,6 +88,18 @@ def web_search(query: str, num_results: int = 5) -> Dict[str, Any]:
             for r in brave_results:
                 if r["url"] not in existing_urls:
                     results.append(r)
+        except Exception:
+            pass
+    
+    # If we have results but no answer, try to fetch content from first result
+    if results and not answer:
+        try:
+            first_url = results[0].get("url", "")
+            if first_url and not any(x in first_url for x in ['youtube.com', 'twitter.com', 'reddit.com']):
+                content = _fetch_page_text(first_url)
+                if content:
+                    answer = content[:500]
+                    results[0]["snippet"] = content[:200]
         except Exception:
             pass
     
@@ -232,6 +269,74 @@ def _strip_html(text: str) -> str:
     # Normalize whitespace
     clean = re.sub(r'\s+', ' ', clean)
     return clean
+
+
+def _get_weather(location: str) -> str:
+    """Get real weather data from wttr.in (free, no API key)."""
+    try:
+        safe_loc = urllib.parse.quote(location)
+        # Format: location: condition, temp
+        url = f"https://wttr.in/{safe_loc}?format=%l:+%C+%t+%h+humidity+wind+%w"
+        
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "GLTCH-Agent/0.2",
+            "Accept": "text/plain"
+        })
+        
+        with urllib.request.urlopen(req, timeout=8) as response:
+            data = response.read().decode('utf-8', errors='replace').strip()
+        
+        if data and 'Unknown' not in data and 'Sorry' not in data:
+            # Also get 3-day forecast summary
+            try:
+                url2 = f"https://wttr.in/{safe_loc}?format=%l:+%C+%t+|+Feels+like+%f+|+Humidity+%h+|+Wind+%w+|+UV+%u+|+Sunrise+%S+Sunset+%s"
+                req2 = urllib.request.Request(url2, headers={
+                    "User-Agent": "GLTCH-Agent/0.2",
+                    "Accept": "text/plain"
+                })
+                with urllib.request.urlopen(req2, timeout=5) as response2:
+                    detailed = response2.read().decode('utf-8', errors='replace').strip()
+                if detailed and 'Unknown' not in detailed:
+                    return detailed
+            except Exception:
+                pass
+            return data
+        
+        return ""
+    except Exception:
+        return ""
+
+
+def _fetch_page_text(url: str, max_chars: int = 1000) -> str:
+    """Fetch and extract main text content from a web page."""
+    try:
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "text/html"
+        })
+        
+        with urllib.request.urlopen(req, timeout=8) as response:
+            html = response.read().decode('utf-8', errors='replace')
+        
+        # Remove script and style blocks
+        html = re.sub(r'<script[^>]*>.*?</script>', '', html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r'<style[^>]*>.*?</style>', '', html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r'<nav[^>]*>.*?</nav>', '', html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r'<header[^>]*>.*?</header>', '', html, flags=re.DOTALL | re.IGNORECASE)
+        html = re.sub(r'<footer[^>]*>.*?</footer>', '', html, flags=re.DOTALL | re.IGNORECASE)
+        
+        # Strip tags
+        text = _strip_html(html)
+        
+        # Clean up
+        text = re.sub(r'\s+', ' ', text).strip()
+        
+        # Return meaningful content (skip if too short)
+        if len(text) > 50:
+            return text[:max_chars]
+        return ""
+    except Exception:
+        return ""
 
 
 def _format_results(query: str, results: List[Dict], answer: str = "") -> str:
