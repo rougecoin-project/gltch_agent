@@ -4,6 +4,7 @@
 rich>=13.0.0
 psutil>=5.9.0
 prompt_toolkit>=3.0.0
+httpx>=0.25.0
 
 # Wallet
 eth-account>=0.11.0
@@ -15,12 +16,18 @@ playwright>=1.40.0
 # GIF Overlay
 Pillow>=10.0.0
 
+# Audio/TTS (optional - install based on provider)
+edge-tts>=6.1.0          # Microsoft Edge TTS (free)
+# elevenlabs>=0.2.0      # ElevenLabs TTS (requires API key)
+# openai>=1.0.0          # OpenAI TTS (requires API key)
+
 # Development (optional)
 pytest>=7.0.0
 pytest-cov>=4.0.0
 pytest-asyncio>=0.21.0
 # black>=23.0.0
 # ruff>=0.1.0
+
 # Config
 python-dotenv>=1.0.0
 PyYAML>=6.0.0

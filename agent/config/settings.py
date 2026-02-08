@@ -19,6 +19,8 @@ REMOTE_URL = os.environ.get("GLTCH_REMOTE_URL", "http://localhost:1234/v1/chat/c
 REMOTE_MODEL = os.environ.get("GLTCH_REMOTE_MODEL", "qwen/qwen3-vl-30b")
 REMOTE_CTX = int(os.environ.get("GLTCH_REMOTE_CTX", "8192"))
 REMOTE_BACKEND = "openai"
+# Disable streaming for remote to reduce latency over high-latency connections
+REMOTE_STREAM = os.environ.get("GLTCH_REMOTE_STREAM", "true").lower() == "true"
 
 # Vision Model (for image analysis)
 VISION_MODEL = os.environ.get("GLTCH_VISION_MODEL", "gemma-3-12b-it")

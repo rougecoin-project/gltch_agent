@@ -5,6 +5,7 @@
 
 import { WebSocketServer, WebSocket } from 'ws';
 import type { MessageRouter } from '../routing/router.js';
+import type { WebChatPlugin } from '../channels/plugins/webchat/plugin.js';
 
 interface Client {
   id: string;
@@ -21,12 +22,20 @@ export class WebSocketHub {
   private port: number;
   private host: string;
   private router: MessageRouter;
+  private webchatPlugin: WebChatPlugin | null = null;
   private nextClientId = 1;
 
   constructor(port: number, host: string, router: MessageRouter) {
     this.port = port;
     this.host = host;
     this.router = router;
+  }
+
+  /**
+   * Set the WebChat plugin for handling webchat connections
+   */
+  setWebChatPlugin(plugin: WebChatPlugin): void {
+    this.webchatPlugin = plugin;
   }
 
   async start(): Promise<void> {
@@ -60,17 +69,40 @@ export class WebSocketHub {
   }
 
   private handleConnection(ws: WebSocket, req: any): void {
-    const clientId = `ws-${this.nextClientId++}`;
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
     const channel = url.searchParams.get('channel') || 'webchat';
-    const sessionId = url.searchParams.get('session') || clientId;
+    const sessionId = url.searchParams.get('session') || undefined;
     const user = url.searchParams.get('user') || undefined;
+
+    // If this is a webchat connection and we have the plugin, delegate to it
+    if (channel === 'webchat' && this.webchatPlugin) {
+      const clientId = this.webchatPlugin.handleConnection(ws, sessionId, user);
+      if (clientId) {
+        // Track in our map for connection count
+        this.clients.set(clientId, {
+          id: clientId,
+          ws,
+          channel: 'webchat',
+          sessionId: sessionId || clientId,
+          user,
+          connectedAt: new Date()
+        });
+
+        ws.on('close', () => {
+          this.clients.delete(clientId);
+        });
+      }
+      return;
+    }
+
+    // Legacy handling for non-webchat connections
+    const clientId = `ws-${this.nextClientId++}`;
 
     const client: Client = {
       id: clientId,
       ws,
       channel,
-      sessionId,
+      sessionId: sessionId || clientId,
       user,
       connectedAt: new Date()
     };
@@ -81,7 +113,7 @@ export class WebSocketHub {
     this.send(client, {
       type: 'connected',
       clientId,
-      sessionId,
+      sessionId: client.sessionId,
       channel
     });
 
@@ -177,11 +209,24 @@ export class WebSocketHub {
     }
   }
 
+  /**
+   * Broadcast to webchat clients via plugin
+   */
+  broadcastToWebchat(data: object): void {
+    if (this.webchatPlugin) {
+      this.webchatPlugin.broadcast(data);
+    }
+  }
+
   getConnectionCount(): number {
     return this.clients.size;
   }
 
   getClients(): Client[] {
     return Array.from(this.clients.values());
+  }
+
+  getWebChatClientCount(): number {
+    return this.webchatPlugin?.getClientCount() ?? 0;
   }
 }

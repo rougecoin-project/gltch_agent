@@ -9,6 +9,13 @@ import { AgentBridge } from './agent-bridge.js';
 import { MessageRouter } from '../routing/router.js';
 import { SessionManager } from '../sessions/manager.js';
 import type { GatewayConfig } from '../config/loader.js';
+import { getChannelConfigs } from '../config/loader.js';
+import { 
+  loadAllPlugins, 
+  unloadAllPlugins, 
+  pluginRegistry,
+  getWebChatPlugin
+} from '../channels/plugins/index.js';
 
 export class GatewayServer {
   private config: GatewayConfig;
@@ -37,6 +44,27 @@ export class GatewayServer {
       console.log('✓ Agent connected');
     }
 
+    // Load channel plugins
+    console.log('');
+    console.log('Loading channel plugins...');
+    const channelConfigs = getChannelConfigs(this.config);
+    const loadResult = await loadAllPlugins(channelConfigs, this.router);
+    
+    if (loadResult.loaded.length > 0) {
+      console.log(`✓ Loaded channels: ${loadResult.loaded.join(', ')}`);
+    }
+    if (loadResult.failed.length > 0) {
+      for (const failure of loadResult.failed) {
+        console.warn(`✗ Failed to load ${failure.channel}: ${failure.error}`);
+      }
+    }
+
+    // Connect WebSocket hub to WebChat plugin
+    const webchatPlugin = getWebChatPlugin();
+    if (webchatPlugin) {
+      this.wsHub.setWebChatPlugin(webchatPlugin);
+    }
+
     // Start servers
     await this.httpServer.start();
     await this.wsHub.start();
@@ -50,14 +78,20 @@ export class GatewayServer {
   }
 
   async stop(): Promise<void> {
+    // Unload all channel plugins
+    await unloadAllPlugins();
+    
     await this.wsHub.stop();
     await this.httpServer.stop();
   }
 
-  getStatus(): object {
+  async getStatus(): Promise<object> {
+    // Get channel status from plugin registry
+    const channelStatus = await pluginRegistry.getStatus();
+    
     return {
       status: 'running',
-      version: '0.2.0',
+      version: '0.3.0',
       uptime: process.uptime(),
       connections: this.wsHub.getConnectionCount(),
       sessions: this.sessions.getSessionCount(),
@@ -65,10 +99,14 @@ export class GatewayServer {
         url: this.config.agentUrl,
         connected: this.agentBridge.isConnected()
       },
-      channels: {
-        discord: this.config.channels.discord.enabled,
-        telegram: this.config.channels.telegram.enabled,
-        webchat: this.config.channels.webchat.enabled
+      channels: channelStatus,
+      plugins: {
+        loaded: pluginRegistry.count,
+        list: pluginRegistry.getChannelMetas().map(m => ({
+          id: m.id,
+          name: m.displayName,
+          icon: m.icon
+        }))
       }
     };
   }
@@ -83,5 +121,9 @@ export class GatewayServer {
 
   getSessions(): SessionManager {
     return this.sessions;
+  }
+
+  getPluginRegistry() {
+    return pluginRegistry;
   }
 }
