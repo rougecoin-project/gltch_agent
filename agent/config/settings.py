@@ -17,7 +17,7 @@ LOCAL_BACKEND = "ollama"
 # Remote LLM (LM Studio / OpenAI Compatible)
 REMOTE_URL = os.environ.get("GLTCH_REMOTE_URL", "http://localhost:1234/v1/chat/completions")
 REMOTE_MODEL = os.environ.get("GLTCH_REMOTE_MODEL", "qwen/qwen3-vl-30b")
-REMOTE_CTX = int(os.environ.get("GLTCH_REMOTE_CTX", "8192"))
+REMOTE_CTX = int(os.environ.get("GLTCH_REMOTE_CTX", "32768"))
 REMOTE_BACKEND = "openai"
 
 # Vision Model (for image analysis)
