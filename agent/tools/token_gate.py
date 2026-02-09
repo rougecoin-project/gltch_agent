@@ -28,7 +28,10 @@ def _rpc_call(method: str, params: list, id: int = 1) -> Any:
         req = urllib.request.Request(
             BASE_RPC_URL,
             data=json.dumps(payload).encode("utf-8"),
-            headers={"Content-Type": "application/json"}
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "GLTCH-Agent/0.2"
+            }
         )
         
         with urllib.request.urlopen(req, timeout=10) as response:

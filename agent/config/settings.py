@@ -36,7 +36,7 @@ OPENAI_MODEL = os.environ.get("GLTCH_OPENAI_MODEL", "gpt-4o")
 OPENAI_CTX = 128000
 
 # Token Gating (Base / XRGE)
-BASE_RPC_URL = os.environ.get("GLTCH_BASE_RPC", "https://mainnet.base.org")
+BASE_RPC_URL = os.environ.get("GLTCH_BASE_RPC", "https://base-rpc.publicnode.com")
 XRGE_CONTRACT = os.environ.get("XRGE_CONTRACT_ADDRESS", "0x147120faEC9277ec02d957584CFCD92B56A24317")
 XRGE_GATE_THRESHOLD = float(os.environ.get("GLTCH_GATE_THRESHOLD", "1000"))
 

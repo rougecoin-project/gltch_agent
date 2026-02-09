@@ -229,6 +229,7 @@ def code(prompt: str, session_id: Optional[str] = None, project: Optional[str] =
     Returns (response, project_folder_name).
     
     TOKEN GATED: Requires XRGE holdings.
+    Automatically researches relevant docs before coding.
     """
     # TOKEN GATE CHECK - require XRGE holdings for code generation
     try:
@@ -248,14 +249,24 @@ def code(prompt: str, session_id: Optional[str] = None, project: Optional[str] =
     if not is_available():
         return "OpenCode is not running. Start it with: opencode serve", None
     
+    # RESEARCH PHASE — gather relevant documentation
+    enriched_prompt = prompt
+    try:
+        from agent.tools.code_research import research_for_coding
+        context = research_for_coding(prompt)
+        if context:
+            enriched_prompt = f"{context}\n\n---\n\nTASK: {prompt}"
+    except Exception:
+        pass  # Research failure shouldn't block coding
+    
     # Create session if needed
     if not session_id:
         session_id = create_session("GLTCH Coding")
         if not session_id:
             return "Failed to create OpenCode session", None
     
-    # Send prompt
-    response = send_prompt(session_id, prompt, project)
+    # Send enriched prompt
+    response = send_prompt(session_id, enriched_prompt, project)
     project_name = get_active_project()
     
     if response:

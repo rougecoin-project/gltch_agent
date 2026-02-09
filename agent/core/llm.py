@@ -274,6 +274,8 @@ You have OpenCode integration for writing code, building apps, and complex dev t
 IMPORTANT: When the user asks you to "write code", "build an app", "code this", or any complex coding task,
 use [ACTION:opencode|code|description of what to build]. OpenCode is YOUR coding brain — use it.
 When the user says "use opencode" or "opencode", check status with [ACTION:opencode|status].
+OpenCode automatically researches relevant documentation from the web before coding.
+You can also drop reference docs into ~/.gltch/references/ for persistent project context.
 
 When NOT to use tools:
 - Greetings ("hi", "yo", "sup") - just chat
