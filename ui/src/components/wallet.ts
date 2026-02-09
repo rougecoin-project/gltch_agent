@@ -312,7 +312,7 @@ export class GltchWallet extends LitElement {
 
   connectedCallback() {
     super.connectedCallback();
-    this.loadWallet();
+    this.loadWallet().then(() => this.loadBalances());
   }
 
   private async loadWallet() {

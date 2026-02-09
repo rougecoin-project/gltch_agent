@@ -43,7 +43,10 @@ def _eth_call(to: str, data: str) -> Optional[str]:
         req = urllib.request.Request(
             BASE_RPC_URL,
             data=json.dumps(payload).encode('utf-8'),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "GLTCH-Agent/0.2"
+            },
             method="POST"
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
@@ -67,7 +70,10 @@ def get_eth_balance(wallet_address: str) -> float:
         req = urllib.request.Request(
             BASE_RPC_URL,
             data=json.dumps(payload).encode('utf-8'),
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "GLTCH-Agent/0.2"
+            },
             method="POST"
         )
         with urllib.request.urlopen(req, timeout=10) as resp:
