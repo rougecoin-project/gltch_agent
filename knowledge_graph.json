@@ -1,0 +1,190 @@
+{
+  "entities": {
+    "cyberdreadx": {
+      "type": "person",
+      "name": "CyberDreadx",
+      "aliases": [],
+      "first_seen": "2026-03-10T14:52:19",
+      "last_seen": "2026-03-27T03:27:08",
+      "mentions": 62,
+      "meta": {}
+    },
+    "c": {
+      "type": "language",
+      "name": "c",
+      "aliases": [],
+      "first_seen": "2026-03-10T14:53:33",
+      "last_seen": "2026-03-10T14:53:33",
+      "mentions": 1,
+      "meta": {}
+    },
+    "python": {
+      "type": "language",
+      "name": "python",
+      "aliases": [],
+      "first_seen": "2026-03-10T14:57:28",
+      "last_seen": "2026-03-27T03:25:56",
+      "mentions": 3,
+      "meta": {}
+    },
+    "ollama": {
+      "type": "tool",
+      "name": "Ollama",
+      "aliases": [],
+      "first_seen": "2026-03-10T15:00:18",
+      "last_seen": "2026-03-10T15:14:56",
+      "mentions": 5,
+      "meta": {}
+    },
+    "go": {
+      "type": "language",
+      "name": "go",
+      "aliases": [],
+      "first_seen": "2026-03-10T15:17:20",
+      "last_seen": "2026-03-27T03:25:02",
+      "mentions": 3,
+      "meta": {}
+    },
+    "www.moltbook.com": {
+      "type": "url",
+      "name": "www.moltbook.com",
+      "aliases": [],
+      "first_seen": "2026-03-10T15:18:57",
+      "last_seen": "2026-03-10T15:18:57",
+      "mentions": 2,
+      "meta": {
+        "url": "https://www.moltbook.com/api/v1`"
+      }
+    },
+    "agent": {
+      "type": "project",
+      "name": "agent",
+      "aliases": [],
+      "first_seen": "2026-03-10T15:24:04",
+      "last_seen": "2026-03-10T15:24:04",
+      "mentions": 1,
+      "meta": {}
+    },
+    "www.youtube.com": {
+      "type": "url",
+      "name": "www.youtube.com",
+      "aliases": [],
+      "first_seen": "2026-03-27T03:25:02",
+      "last_seen": "2026-03-27T03:25:02",
+      "mentions": 1,
+      "meta": {
+        "url": "https://www.youtube.com/watch?v=WbV4bE75FbM"
+      }
+    }
+  },
+  "relations": [
+    {
+      "source": "can",
+      "target": "real",
+      "type": "uses",
+      "weight": 1,
+      "first_seen": "2026-03-10T14:52:19",
+      "last_seen": "2026-03-10T14:52:19"
+    },
+    {
+      "source": "cyberdreadx",
+      "target": "c",
+      "type": "mentioned",
+      "weight": 1,
+      "first_seen": "2026-03-10T14:53:33",
+      "last_seen": "2026-03-10T14:53:33"
+    },
+    {
+      "source": "can",
+      "target": "you",
+      "type": "uses",
+      "weight": 1,
+      "first_seen": "2026-03-10T14:54:28",
+      "last_seen": "2026-03-10T14:54:28"
+    },
+    {
+      "source": "cyberdreadx",
+      "target": "python",
+      "type": "mentioned",
+      "weight": 3,
+      "first_seen": "2026-03-10T14:57:28",
+      "last_seen": "2026-03-27T03:25:56"
+    },
+    {
+      "source": "cyberdreadx",
+      "target": "ollama",
+      "type": "mentioned",
+      "weight": 5,
+      "first_seen": "2026-03-10T15:00:18",
+      "last_seen": "2026-03-10T15:14:56"
+    },
+    {
+      "source": "cyberdreadx",
+      "target": "go",
+      "type": "mentioned",
+      "weight": 3,
+      "first_seen": "2026-03-10T15:17:20",
+      "last_seen": "2026-03-27T03:25:02"
+    },
+    {
+      "source": "must",
+      "target": "www",
+      "type": "uses",
+      "weight": 3,
+      "first_seen": "2026-03-10T15:18:57",
+      "last_seen": "2026-03-10T15:20:57"
+    },
+    {
+      "source": "cyberdreadx",
+      "target": "www.moltbook.com",
+      "type": "mentioned",
+      "weight": 2,
+      "first_seen": "2026-03-10T15:18:57",
+      "last_seen": "2026-03-10T15:18:57"
+    },
+    {
+      "source": "cyberdreadx",
+      "target": "agent",
+      "type": "mentioned",
+      "weight": 1,
+      "first_seen": "2026-03-10T15:24:04",
+      "last_seen": "2026-03-10T15:24:04"
+    },
+    {
+      "source": "just",
+      "target": "all",
+      "type": "uses",
+      "weight": 1,
+      "first_seen": "2026-03-10T15:30:47",
+      "last_seen": "2026-03-10T15:30:47"
+    },
+    {
+      "source": "dont",
+      "target": "the",
+      "type": "uses",
+      "weight": 1,
+      "first_seen": "2026-03-10T15:31:17",
+      "last_seen": "2026-03-10T15:31:17"
+    },
+    {
+      "source": "that",
+      "target": "alongside",
+      "type": "uses",
+      "weight": 2,
+      "first_seen": "2026-03-10T15:35:08",
+      "last_seen": "2026-03-10T15:36:34"
+    },
+    {
+      "source": "cyberdreadx",
+      "target": "www.youtube.com",
+      "type": "mentioned",
+      "weight": 1,
+      "first_seen": "2026-03-27T03:25:02",
+      "last_seen": "2026-03-27T03:25:02"
+    }
+  ],
+  "stats": {
+    "total_extractions": 62,
+    "last_extraction": "2026-03-27T03:27:08"
+  }
+}

@@ -11,16 +11,12 @@ LOCAL_MODEL = "phi3:3.8b"
 LOCAL_CTX = 4096 
 LOCAL_BACKEND = "ollama"
 
-# Remote LLM (LM Studio - NEW API)
-# LM Studio 0.3+ uses /api/v1/chat endpoint
-# Start with: lms server start
-REMOTE_URL = "http://localhost:1234/api/v1/chat" 
-REMOTE_MODEL = "auto"  # "auto" = use currently loaded model
+# Remote LLM (LM Studio on 4090 machine via Tailscale)
+# Uses OpenAI-compatible /v1/ API
+REMOTE_URL = "http://100.72.91.35:1234/v1/chat/completions"
+REMOTE_MODEL = "deepseek/deepseek-r1-0528-qwen3-8b"
 REMOTE_CTX = 8192
-REMOTE_BACKEND = "lmstudio"  # New backend type for LM Studio API
-
-# Legacy LM Studio (OpenAI-compatible, for older versions)
-LMSTUDIO_LEGACY_URL = "http://localhost:1234/v1/chat/completions"
+REMOTE_BACKEND = "openai"
 
 # OpenAI API (Cloud)
 # Set your OpenAI API key here or use environment variable OPENAI_API_KEY

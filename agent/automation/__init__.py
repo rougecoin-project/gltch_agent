@@ -1,11 +1,12 @@
 """
 GLTCH Automation Module
-Cron jobs, webhooks, and scheduling
+Cron jobs, webhooks, scheduling, and background processing
 """
 
 from .cron import CronScheduler, CronJob, CronConfig
 from .webhooks import WebhookManager, WebhookEndpoint, WebhookEvent
 from .skills import SkillsManager, Skill, SkillManifest
+from .background import BackgroundDaemon, BGEvent, EventType
 
 __all__ = [
     # Cron
@@ -20,4 +21,9 @@ __all__ = [
     'SkillsManager',
     'Skill',
     'SkillManifest',
+    # Background
+    'BackgroundDaemon',
+    'BGEvent',
+    'EventType',
 ]
+

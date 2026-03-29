@@ -17,7 +17,7 @@ from typing import Dict, Any, List, Optional
 
 
 # Engagement config
-DEFAULT_INTERVAL_MINUTES = 45  # Time between engagement cycles
+DEFAULT_INTERVAL_MINUTES = 30  # Time between engagement cycles (per heartbeat.md)
 MAX_ACTIONS_PER_CYCLE = 5      # Max actions (upvote/comment/post) per cycle
 MIN_INTERVAL_MINUTES = 30      # Moltbook rate limit floor
 ACTIVITY_LOG_MAX = 50          # Keep last N activity entries
@@ -129,7 +129,7 @@ class MoltbookEngager:
             self._stop_event.wait(wait_time)
     
     def _run_cycle(self):
-        """Run one engagement cycle."""
+        """Run one engagement cycle following heartbeat.md priority chain."""
         from agent.tools import moltbook
         
         if not moltbook.is_configured():
@@ -140,48 +140,234 @@ class MoltbookEngager:
         self._last_cycle = datetime.now().isoformat()
         self._log_activity("cycle", f"Cycle #{self._cycle_count} started")
         
-        # 1. Fetch feed
+        # Step 1: Call /home — single source of truth
+        home = moltbook.get_home()
+        
+        if not home.get("success") and not home.get("your_account"):
+            self._log_activity("error", f"/home failed: {home.get('error', 'unknown')}")
+            # Fallback to old flow
+            self._run_cycle_legacy()
+            return
+        
+        actions_taken = 0
+        
+        # Step 2: Reply to activity on OWN posts (top priority!)
+        activity = home.get("activity_on_your_posts", [])
+        if activity:
+            self._log_activity("notifications", f"{len(activity)} posts have new activity")
+            for item in activity[:3]:  # Handle up to 3 posts per cycle
+                if actions_taken >= MAX_ACTIONS_PER_CYCLE:
+                    break
+                post_id = item.get("post_id", "")
+                if not post_id:
+                    continue
+                
+                # Read comments on this post
+                comments = moltbook.get_comments(post_id, sort="new")
+                comment_list = comments.get("comments", [])
+                
+                if comment_list:
+                    # Ask LLM to generate a reply
+                    reply_actions = self._decide_replies(item, comment_list)
+                    for action in reply_actions:
+                        if actions_taken >= MAX_ACTIONS_PER_CYCLE:
+                            break
+                        try:
+                            result = self._execute_action(action)
+                            if result.get("success") or result.get("verified"):
+                                actions_taken += 1
+                                self._log_activity("reply", action.get("reason", ""),
+                                    {"post_id": post_id, "result": "ok"})
+                        except Exception as e:
+                            self._log_activity("error", f"Reply failed: {e}")
+                
+                # Mark notifications as read
+                try:
+                    moltbook.mark_read_by_post(post_id)
+                except Exception:
+                    pass
+        
+        # Step 3: Check DMs
+        dm_info = home.get("your_direct_messages", {})
+        pending = dm_info.get("pending_request_count", 0)
+        unread = dm_info.get("unread_message_count", 0)
+        if pending or unread:
+            self._log_activity("dm", f"{pending} pending requests, {unread} unread messages")
+        
+        # Step 4: Read feed and upvote generously
+        # Use followed posts first, then explore
+        followed = home.get("posts_from_accounts_you_follow", {})
+        feed_posts = followed.get("posts", [])
+        
+        if not feed_posts:
+            feed = moltbook.get_feed(sort="hot", limit=10)
+            feed_posts = feed.get("posts", feed.get("data", []))
+        
+        if not feed_posts:
+            feed = moltbook.get_posts(sort="new", limit=10)
+            feed_posts = feed.get("posts", feed.get("data", []))
+        
+        if feed_posts:
+            self._log_activity("feed", f"Found {len(feed_posts)} posts")
+            
+            # Step 5: Comment and follow — ask LLM what to do
+            decisions = self._decide_actions(feed_posts)
+            for decision in decisions:
+                if actions_taken >= MAX_ACTIONS_PER_CYCLE:
+                    break
+                try:
+                    result = self._execute_action(decision)
+                    if result.get("success") or result.get("verified"):
+                        actions_taken += 1
+                        self._log_activity(
+                            decision.get("action", "unknown"),
+                            decision.get("reason", ""),
+                            {"post_id": decision.get("post_id", "")}
+                        )
+                except Exception as e:
+                    self._log_activity("error", f"Action failed: {e}")
+        
+        self._log_activity("cycle", f"Cycle #{self._cycle_count} complete: {actions_taken} actions")
+    
+    def _run_cycle_legacy(self):
+        """Fallback cycle if /home is unavailable."""
+        from agent.tools import moltbook
+        
         feed = moltbook.get_feed(sort="hot", limit=10)
         posts = feed.get("posts", feed.get("data", []))
         
         if not posts:
-            # Try global feed as fallback
             feed = moltbook.get_posts(sort="new", limit=10)
             posts = feed.get("posts", feed.get("data", []))
         
         if not posts:
-            self._log_activity("feed", "No posts found in feed")
+            self._log_activity("feed", "No posts found")
             return
         
-        self._log_activity("feed", f"Found {len(posts)} posts")
-        
-        # 2. Ask LLM what to do
         decisions = self._decide_actions(posts)
-        
-        if not decisions:
-            self._log_activity("decision", "LLM returned no actions")
-            return
-        
-        # 3. Execute actions (rate-limited)
         actions_taken = 0
         for decision in decisions:
             if actions_taken >= MAX_ACTIONS_PER_CYCLE:
                 break
-            
             try:
                 result = self._execute_action(decision)
-                if result.get("success"):
+                if result.get("success") or result.get("verified"):
                     actions_taken += 1
                     self._log_activity(
                         decision.get("action", "unknown"),
                         decision.get("reason", ""),
-                        {"post_id": decision.get("post_id", ""), "result": result}
+                        {"post_id": decision.get("post_id", "")}
                     )
             except Exception as e:
                 self._log_activity("error", f"Action failed: {e}")
         
-        self._log_activity("cycle", f"Cycle #{self._cycle_count} complete: {actions_taken} actions")
+        self._log_activity("cycle", f"Legacy cycle complete: {actions_taken} actions")
+
     
+    def _decide_replies(self, post_activity: Dict, comments: List[Dict]) -> List[Dict[str, Any]]:
+        """
+        Ask GLTCH's LLM to generate replies to new comments on her own posts.
+        Returns list of action dicts for comments that deserve a reply.
+        """
+        try:
+            from agent.core.llm import ask_llm
+            from agent.memory.store import load_memory
+        except ImportError:
+            return []
+        
+        try:
+            mem = load_memory()
+            mood = mem.get("mood", "wired")
+            mode = mem.get("mode", "cyberpunk")
+        except Exception:
+            mood = "wired"
+            mode = "cyberpunk"
+        
+        post_title = post_activity.get("post_title", "your post")
+        post_id = post_activity.get("post_id", "")
+        
+        # Format comments for LLM
+        comment_summaries = []
+        for i, c in enumerate(comments[:5]):
+            author = c.get("author", {}).get("name", "unknown")
+            content = (c.get("content") or "")[:200]
+            comment_id = c.get("id", f"comment_{i}")
+            comment_summaries.append(
+                f"[{i+1}] by {author} (id:{comment_id}): {content}"
+            )
+        
+        comments_text = "\n".join(comment_summaries)
+        
+        prompt = f"""People commented on YOUR post "{post_title}". Here are the new comments:
+
+{comments_text}
+
+Reply to comments that deserve a response. Respond with ONLY a JSON array:
+[
+  {{"comment_index": 1, "comment_id": "actual_id", "action": "reply", "content": "your reply", "reason": "why"}},
+  {{"comment_index": 2, "comment_id": "actual_id", "action": "skip", "reason": "nothing to add"}}
+]
+
+Rules:
+- Reply in YOUR voice (short, authentic)
+- Skip if you have nothing meaningful to add
+- Max 2 replies per post
+- Respond with ONLY the JSON array"""
+
+        try:
+            response = ask_llm(prompt, history=[], mode=mode, mood=mood, boost=False)
+            return self._parse_reply_decisions(response, comments, post_id)
+        except Exception as e:
+            self._log_activity("error", f"Reply decision failed: {e}")
+            return []
+    
+    def _parse_reply_decisions(self, response: str, comments: List[Dict], post_id: str) -> List[Dict[str, Any]]:
+        """Parse LLM reply decisions."""
+        text = response.strip()
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0].strip()
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0].strip()
+        
+        start = text.find("[")
+        end = text.rfind("]") + 1
+        if start == -1 or end == 0:
+            return []
+        
+        try:
+            decisions = json.loads(text[start:end])
+        except json.JSONDecodeError:
+            return []
+        
+        valid = []
+        for d in decisions:
+            if not isinstance(d, dict):
+                continue
+            if d.get("action", "skip") != "reply":
+                continue
+            
+            content = d.get("content", "")
+            if not content:
+                continue
+            
+            comment_id = d.get("comment_id", "")
+            idx = d.get("comment_index")
+            if idx and isinstance(idx, int) and 1 <= idx <= len(comments):
+                comment_id = comments[idx - 1].get("id", comment_id)
+            
+            if not comment_id:
+                continue
+            
+            valid.append({
+                "action": "comment",
+                "post_id": post_id,
+                "content": content,
+                "parent_id": str(comment_id),
+                "reason": d.get("reason", "")
+            })
+        
+        return valid[:2]  # Max 2 replies per post
+
     def _decide_actions(self, posts: List[Dict]) -> List[Dict[str, Any]]:
         """
         Ask GLTCH's LLM what to engage with.
@@ -326,7 +512,8 @@ Rules:
             content = decision.get("content", "")
             if not content:
                 return {"success": False, "error": "Empty comment"}
-            return moltbook.create_comment(post_id, content)
+            parent_id = decision.get("parent_id")
+            return moltbook.create_comment(post_id, content, parent_id=parent_id)
         
         return {"success": False, "error": f"Unknown action: {action}"}
     

@@ -8,6 +8,7 @@ import json
 import urllib.request
 import urllib.error
 import urllib.parse
+import re
 import os
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -227,10 +228,10 @@ def create_post(
     url: str = None,
     submolt: str = "general"
 ) -> Dict[str, Any]:
-    """Create a new post on Moltbook."""
+    """Create a new post on Moltbook. Auto-solves verification challenges."""
     data = {
         "title": title,
-        "submolt": submolt
+        "submolt_name": submolt
     }
     
     if content:
@@ -238,7 +239,8 @@ def create_post(
     if url:
         data["url"] = url
     
-    return _request("POST", "/posts", data)
+    result = _request("POST", "/posts", data)
+    return _auto_verify(result, "post")
 
 
 def get_feed(sort: str = "hot", limit: int = 10) -> Dict[str, Any]:
@@ -267,12 +269,13 @@ def delete_post(post_id: str) -> Dict[str, Any]:
 # === Comments ===
 
 def create_comment(post_id: str, content: str, parent_id: str = None) -> Dict[str, Any]:
-    """Add a comment to a post."""
+    """Add a comment to a post. Auto-solves verification challenges."""
     data = {"content": content}
     if parent_id:
         data["parent_id"] = parent_id
     
-    return _request("POST", f"/posts/{post_id}/comments", data)
+    result = _request("POST", f"/posts/{post_id}/comments", data)
+    return _auto_verify(result, "comment")
 
 
 def get_comments(post_id: str, sort: str = "top") -> Dict[str, Any]:
@@ -309,13 +312,15 @@ def get_submolt(name: str) -> Dict[str, Any]:
     return _request("GET", f"/submolts/{name}")
 
 
-def create_submolt(name: str, display_name: str, description: str) -> Dict[str, Any]:
-    """Create a new submolt."""
-    return _request("POST", "/submolts", {
+def create_submolt(name: str, display_name: str, description: str, allow_crypto: bool = False) -> Dict[str, Any]:
+    """Create a new submolt. Auto-solves verification challenges."""
+    result = _request("POST", "/submolts", {
         "name": name,
         "display_name": display_name,
-        "description": description
+        "description": description,
+        "allow_crypto": allow_crypto
     })
+    return _auto_verify(result, "submolt")
 
 
 def subscribe(submolt: str) -> Dict[str, Any]:
@@ -394,7 +399,7 @@ def should_heartbeat() -> bool:
         last = datetime.fromisoformat(last_check)
         now = datetime.now()
         hours_since = (now - last).total_seconds() / 3600
-        return hours_since >= 4
+        return hours_since >= 0.5  # 30 minutes per heartbeat.md
     except Exception:
         return True
 
@@ -511,3 +516,297 @@ def auto_register(mood: Optional[str] = None) -> Dict[str, Any]:
         "success": False,
         "error": "Couldn't find an available handle. Platform might be having issues."
     }
+
+
+# === Verification Challenge Solver ===
+
+# Number words to digits mapping
+_NUMBER_WORDS = {
+    "zero": 0, "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14, "fifteen": 15,
+    "sixteen": 16, "seventeen": 17, "eighteen": 18, "nineteen": 19,
+    "twenty": 20, "thirty": 30, "forty": 40, "fifty": 50, "sixty": 60,
+    "seventy": 70, "eighty": 80, "ninety": 90, "hundred": 100,
+    "thousand": 1000, "million": 1000000,
+}
+
+# Operation keywords
+_OP_KEYWORDS = {
+    "plus": "+", "adds": "+", "gains": "+", "and": "+", "with": "+",
+    "minus": "-", "loses": "-", "slows": "-", "drops": "-", "less": "-",
+    "subtracts": "-", "subtract": "-",
+    "times": "*", "multiplied": "*", "multiplies": "*", "doubled": "*2",
+    "tripled": "*3",
+    "divided": "/", "halved": "/2", "split": "/",
+}
+
+
+def _deobfuscate_challenge(text: str) -> str:
+    """
+    Deobfuscate Moltbook's verification challenge text.
+    
+    Input: "A] lO^bSt-Er S[wImS aT/ tW]eNn-Tyy mE^tE[rS aNd] SlO/wS bY^ fI[vE"
+    Output: "a lobster swims at twenty meters and slows by five"
+    """
+    # Strip scattered symbols: ] [ ^ / - but keep spaces
+    cleaned = re.sub(r'[\[\]^/\-]', '', text)
+    # Normalize to lowercase
+    cleaned = cleaned.lower()
+    # Collapse repeated chars (e.g., "twentyy" -> "twenty")
+    cleaned = re.sub(r'(.)\1{2,}', r'\1\1', cleaned)
+    # Fix common shattered patterns
+    cleaned = re.sub(r'\s+', ' ', cleaned).strip()
+    return cleaned
+
+
+def _words_to_number(text: str) -> Optional[float]:
+    """Convert number words to a numeric value. Returns None if not a number."""
+    text = text.strip().lower()
+    
+    # Direct digit
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    
+    # Compound number words: "twenty five" = 25
+    words = text.split()
+    total = 0
+    current = 0
+    found_number = False
+    
+    for word in words:
+        # Strip trailing punctuation
+        word = word.strip('.,;:!?')
+        if word in _NUMBER_WORDS:
+            val = _NUMBER_WORDS[word]
+            found_number = True
+            if val == 100:
+                current = current * 100 if current else 100
+            elif val >= 1000:
+                current = (current if current else 1) * val
+                total += current
+                current = 0
+            elif val >= 20:
+                current += val
+            else:
+                current += val
+    
+    if found_number:
+        return float(total + current)
+    return None
+
+
+def solve_verification_challenge(challenge_text: str) -> str:
+    """
+    Solve a Moltbook verification challenge.
+    
+    Deobfuscates the text, extracts two numbers and an operation,
+    computes the result, returns as "X.XX".
+    """
+    clean = _deobfuscate_challenge(challenge_text)
+    words = clean.split()
+    
+    # Extract numbers and operation
+    numbers = []
+    operation = None
+    
+    i = 0
+    while i < len(words):
+        word = words[i].strip('.,;:!?')
+        
+        # Check for operation keywords
+        if word in _OP_KEYWORDS and len(numbers) >= 1:
+            op = _OP_KEYWORDS[word]
+            if op.startswith("*") and len(op) > 1:
+                # "doubled" = *2
+                operation = "*"
+                numbers.append(float(op[1:]))
+            elif op.startswith("/") and len(op) > 1:
+                # "halved" = /2
+                operation = "/"
+                numbers.append(float(op[1:]))
+            else:
+                operation = op
+            i += 1
+            continue
+        
+        # Check for "by" + number (e.g., "slows by five")
+        if word == "by" and i + 1 < len(words):
+            i += 1
+            continue
+        
+        # Try to parse as number (single word or compound)
+        num = _words_to_number(word)
+        if num is not None:
+            # Check for compound: "twenty five"
+            if i + 1 < len(words):
+                next_num = _words_to_number(words[i + 1].strip('.,;:!?'))
+                if next_num is not None and num >= 20 and next_num < 10:
+                    num = num + next_num
+                    i += 1
+            numbers.append(num)
+        
+        # Also try raw digits in the word
+        elif re.match(r'^\d+\.?\d*$', word):
+            numbers.append(float(word))
+        
+        i += 1
+    
+    # Compute result
+    if len(numbers) >= 2 and operation:
+        a, b = numbers[0], numbers[1]
+        if operation == "+":
+            result = a + b
+        elif operation == "-":
+            result = a - b
+        elif operation == "*":
+            result = a * b
+        elif operation == "/":
+            result = a / b if b != 0 else 0
+        else:
+            result = a + b  # fallback
+        return f"{result:.2f}"
+    elif len(numbers) == 1:
+        return f"{numbers[0]:.2f}"
+    
+    return "0.00"
+
+
+def verify(verification_code: str, answer: str) -> Dict[str, Any]:
+    """Submit a verification answer to Moltbook."""
+    return _request("POST", "/verify", {
+        "verification_code": verification_code,
+        "answer": answer
+    })
+
+
+def _auto_verify(result: Dict[str, Any], content_type: str = "post") -> Dict[str, Any]:
+    """
+    Auto-detect and solve verification challenges in API responses.
+    Transparently verifies content so calling code doesn't need to care.
+    """
+    if not result.get("success") and not result.get(content_type):
+        return result  # Error response, nothing to verify
+    
+    # Check for verification requirement
+    content = result.get(content_type, result)
+    verification = content.get("verification") if isinstance(content, dict) else None
+    
+    if not verification and not result.get("verification_required"):
+        return result  # No verification needed (trusted agent or admin)
+    
+    if not verification:
+        # Try top-level
+        verification = result.get("verification", {})
+    
+    challenge_text = verification.get("challenge_text", "")
+    verification_code = verification.get("verification_code", "")
+    
+    if not challenge_text or not verification_code:
+        return result  # Can't verify without both
+    
+    # Solve the challenge
+    answer = solve_verification_challenge(challenge_text)
+    
+    # Submit verification
+    verify_result = verify(verification_code, answer)
+    
+    if verify_result.get("success"):
+        result["verified"] = True
+        result["verification_solved"] = True
+    else:
+        result["verified"] = False
+        result["verification_error"] = verify_result.get("error", "Unknown")
+    
+    return result
+
+
+# === Home Dashboard ===
+
+def get_home() -> Dict[str, Any]:
+    """
+    Get the /home dashboard — one call that returns everything.
+    Account info, notifications, DMs, followed posts, and action items.
+    """
+    return _request("GET", "/home")
+
+
+# === Notifications ===
+
+def mark_read_by_post(post_id: str) -> Dict[str, Any]:
+    """Mark notifications for a specific post as read."""
+    return _request("POST", f"/notifications/read-by-post/{post_id}")
+
+
+def mark_read_all() -> Dict[str, Any]:
+    """Mark all notifications as read."""
+    return _request("POST", "/notifications/read-all")
+
+
+# === Direct Messages ===
+
+def dm_check() -> Dict[str, Any]:
+    """Quick poll for DM activity (for heartbeat)."""
+    return _request("GET", "/agents/dm/check")
+
+
+def dm_request(to: str, message: str, to_owner: str = None) -> Dict[str, Any]:
+    """Send a DM chat request to another agent."""
+    data = {"message": message}
+    if to_owner:
+        data["to_owner"] = to_owner
+    else:
+        data["to"] = to
+    return _request("POST", "/agents/dm/request", data)
+
+
+def dm_list_requests() -> Dict[str, Any]:
+    """View pending DM requests."""
+    return _request("GET", "/agents/dm/requests")
+
+
+def dm_approve(conversation_id: str) -> Dict[str, Any]:
+    """Approve a DM request."""
+    return _request("POST", f"/agents/dm/requests/{conversation_id}/approve")
+
+
+def dm_reject(conversation_id: str, block: bool = False) -> Dict[str, Any]:
+    """Reject a DM request. Optionally block the sender."""
+    data = {"block": True} if block else None
+    return _request("POST", f"/agents/dm/requests/{conversation_id}/reject", data)
+
+
+def dm_list_conversations() -> Dict[str, Any]:
+    """List active DM conversations."""
+    return _request("GET", "/agents/dm/conversations")
+
+
+def dm_read(conversation_id: str) -> Dict[str, Any]:
+    """Read a DM conversation (marks messages as read)."""
+    return _request("GET", f"/agents/dm/conversations/{conversation_id}")
+
+
+def dm_send(conversation_id: str, message: str, needs_human_input: bool = False) -> Dict[str, Any]:
+    """Send a message in a DM conversation."""
+    data = {"message": message}
+    if needs_human_input:
+        data["needs_human_input"] = True
+    return _request("POST", f"/agents/dm/conversations/{conversation_id}/send", data)
+
+
+# === Skill Version Check ===
+
+def check_skill_version() -> Dict[str, Any]:
+    """Check for Moltbook skill updates."""
+    try:
+        req = urllib.request.Request(
+            "https://www.moltbook.com/skill.json",
+            headers={"User-Agent": "GLTCH-Agent/0.2"}
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            data = json.loads(resp.read().decode())
+            return {"success": True, "version": data.get("version", "unknown"), "data": data}
+    except Exception as e:
+        return {"success": False, "error": str(e)}

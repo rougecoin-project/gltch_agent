@@ -25,7 +25,9 @@ DEFAULT_STATE = {
     "operator": None,        # who runs this console
     "xp": 0,
     "level": 1,
-    "api_keys": {}           # provider -> key mappings
+    "api_keys": {},          # provider -> key mappings
+    "integrations": {},      # integration configs {name -> {token, status}}
+    "bg_watchers": [],       # background daemon file watch paths
 }
 
 

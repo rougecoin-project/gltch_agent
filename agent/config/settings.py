@@ -29,11 +29,12 @@ VISION_MODEL = os.environ.get("GLTCH_VISION_MODEL", "gemma-3-12b-it")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 OPENAI_MODEL = os.environ.get("GLTCH_OPENAI_MODEL", "gpt-4o")
-# OpenAI API (Cloud)
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
-OPENAI_MODEL = os.environ.get("GLTCH_OPENAI_MODEL", "gpt-4o")
 OPENAI_CTX = 128000
+
+# Anthropic / Claude API (Cloud)
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+ANTHROPIC_MODEL = os.environ.get("GLTCH_ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+ANTHROPIC_CTX = 200000
 
 # Token Gating (Base / XRGE)
 BASE_RPC_URL = os.environ.get("GLTCH_BASE_RPC", "https://base-rpc.publicnode.com")

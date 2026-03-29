@@ -179,6 +179,10 @@ class RPCServer:
             response = "".join(response_chunks)
             cleaned_response = strip_thinking(response)
             
+            # Get stats from last LLM call
+            from agent.core.llm import get_last_stats
+            stats = get_last_stats()
+            
             # Save to session
             self.sessions.add_message(session_id, "user", message)
             self.sessions.add_message(session_id, "assistant", cleaned_response)
@@ -186,7 +190,14 @@ class RPCServer:
             return {
                 "response": cleaned_response,
                 "mood": self.agent.mood,
-                "session_id": session_id
+                "session_id": session_id,
+                "stats": {
+                    "model": stats.get("model", ""),
+                    "tokens": stats.get("total_tokens", 0),
+                    "speed": stats.get("tokens_per_sec", 0),
+                    "context_used": stats.get("context_used", 0),
+                    "context_max": stats.get("context_max", 0),
+                }
             }
         except Exception as e:
             import traceback
@@ -311,7 +322,15 @@ class RPCServer:
     
     def _get_current_model(self) -> str:
         """Get the current model name."""
+        from agent.core.llm import get_last_stats
         from agent.config.settings import LOCAL_MODEL, REMOTE_MODEL, OPENAI_MODEL
+        
+        # Prefer actual model from last LLM call
+        stats = get_last_stats()
+        if stats.get("model"):
+            return stats["model"]
+        
+        # Fall back to configured default
         mem = self.agent.memory
         if mem.get("openai_mode"):
             return OPENAI_MODEL

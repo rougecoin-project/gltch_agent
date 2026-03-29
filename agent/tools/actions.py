@@ -14,7 +14,7 @@ import sys
 from typing import Tuple, List, Optional, Dict, Any
 
 from agent.tools.shell import run_shell
-from agent.tools.file_ops import file_write, file_append, file_read, file_ls
+from agent.tools.file_ops import file_write, file_append, file_read, file_ls, file_edit, file_grep, file_glob, file_delete, file_move
 from agent.tools.security import SecurityGuard
 
 
@@ -185,10 +185,21 @@ def parse_and_execute_actions(
             results.append(f"{'✓' if success else '✗'} {msg}")
                 
         elif action == "read":
-            filepath = args.split('|')[0].strip().split('\n')[0].strip()
-            success, content = file_read(filepath)
+            # [ACTION:read|file] or [ACTION:read|file|start-end] e.g. [ACTION:read|foo.py|50-100]
+            parts = args.split('|')
+            filepath = parts[0].strip().split('\n')[0].strip()
+            start_line = end_line = None
+            if len(parts) > 1:
+                range_str = parts[1].strip()
+                if '-' in range_str:
+                    try:
+                        s, e = range_str.split('-', 1)
+                        start_line, end_line = int(s.strip()), int(e.strip())
+                    except ValueError:
+                        pass
+            success, content = file_read(filepath, start_line, end_line)
             if success:
-                results.append(f"--- {filepath} ---\n{content}")
+                results.append(content)
             else:
                 results.append(f"✗ {content}")
                 
@@ -207,6 +218,99 @@ def parse_and_execute_actions(
             else:
                 results.append(f"✗ {entries}")
                 
+        elif action in ("edit", "edit_all"):
+            # Precise string replacement — prefer over write for targeted edits
+            # [ACTION:edit|filepath|old_string|new_string]    — replace first occurrence
+            # [ACTION:edit_all|filepath|old_string|new_string] — replace ALL occurrences
+            # Use \n for literal newlines in old/new strings
+            parts = args.split('|', 2)
+            if len(parts) < 3:
+                results.append(f"✗ {action} requires: [ACTION:{action}|filepath|old_string|new_string]")
+                return
+            filepath = parts[0].strip()
+            old_str = parts[1].replace('\\n', '\n')
+            new_str = parts[2].replace('\\n', '\n')
+            success, msg = file_edit(filepath, old_str, new_str, replace_all=(action == "edit_all"))
+            results.append(f"{'✓' if success else '✗'} {msg}")
+
+        elif action == "grep":
+            # Regex search across file contents — like ripgrep/Claude Code Grep
+            # Format: [ACTION:grep|pattern|path]
+            parts = args.split('|', 1)
+            pattern = parts[0].strip()
+            path = parts[1].strip() if len(parts) > 1 else "."
+            success, matches = file_grep(pattern, path)
+            if success:
+                if matches:
+                    lines = [f"{m['file']}:{m['line']}: {m['content']}" for m in matches]
+                    header = f"grep '{pattern}' in {path} ({len(matches)} match{'es' if len(matches) != 1 else ''}):"
+                    results.append(header + "\n" + "\n".join(lines))
+                else:
+                    results.append(f"No matches for '{pattern}' in {path}")
+            else:
+                err = matches[0]['content'] if matches else "Unknown error"
+                results.append(f"✗ grep failed: {err}")
+
+        elif action == "glob":
+            # Find files by glob pattern — like Claude Code Glob
+            # Format: [ACTION:glob|pattern|path]  e.g. [ACTION:glob|**/*.py|.]
+            parts = args.split('|', 1)
+            pattern = parts[0].strip()
+            path = parts[1].strip() if len(parts) > 1 else "."
+            success, files = file_glob(pattern, path)
+            if success:
+                if files:
+                    results.append(f"glob '{pattern}' ({len(files)} file{'s' if len(files) != 1 else ''}):\n" + "\n".join(files))
+                else:
+                    results.append(f"No files matching '{pattern}'")
+            else:
+                results.append(f"✗ glob failed: {files[0] if files else 'unknown'}")
+
+        elif action == "delete":
+            # [ACTION:delete|path] — requires confirmation for safety
+            path = args.strip().split('|')[0].strip()
+            if not confirm_callback('delete', path):
+                results.append(f"✖ delete denied by user: {path}")
+                return
+            is_safe, reason = SecurityGuard.is_safe_path(path, "delete")
+            if not is_safe:
+                results.append(f"⛔ ACTION BLOCKED BY SECURITY: {reason}")
+                return
+            success, msg = file_delete(path)
+            results.append(msg if success else f"✗ {msg}")
+
+        elif action == "move":
+            # [ACTION:move|src|dst]
+            parts = args.split('|', 1)
+            if len(parts) < 2:
+                results.append("✗ move requires: [ACTION:move|src|dst]")
+                return
+            src = parts[0].strip()
+            dst = parts[1].strip()
+            is_safe, reason = SecurityGuard.is_safe_path(dst, "write")
+            if not is_safe:
+                results.append(f"⛔ ACTION BLOCKED BY SECURITY: {reason}")
+                return
+            success, msg = file_move(src, dst)
+            results.append(msg if success else f"✗ {msg}")
+
+        elif action == "git":
+            # Git operations — read-safe by default, write ops need confirmation
+            # Format: [ACTION:git|status], [ACTION:git|diff HEAD], [ACTION:git|log --oneline -10]
+            cmd = args.strip()
+            if not cmd:
+                results.append("✗ Provide a git subcommand: git|status, git|diff, git|log, etc.")
+                return
+            sub = cmd.split()[0].lower()
+            # Destructive ops require confirmation
+            destructive = {'push', 'reset', 'clean', 'checkout', 'branch -D', 'rebase'}
+            if sub in destructive or '--force' in cmd or '-f ' in cmd:
+                if not confirm_callback('git', cmd):
+                    results.append(f"✖ git {cmd} denied by user")
+                    return
+            success, output = run_shell(f"git {cmd}")
+            results.append(f"$ git {cmd}\n{output}")
+
         elif action == "run":
             cmd = args.strip()
             

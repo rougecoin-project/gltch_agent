@@ -7,6 +7,8 @@ from typing import Dict, Any, Optional, Generator, List
 import time
 
 from agent.memory.store import load_memory, save_memory, now_iso
+from agent.memory.knowledge_graph import KnowledgeGraph
+from agent.memory.learner import Learner
 from agent.core.llm import stream_llm, get_last_stats, set_api_keys
 from agent.tools.actions import parse_and_execute_actions, strip_thinking
 from agent.personality.emotions import get_emotion_metrics, get_environmental_context
@@ -28,6 +30,9 @@ class GltchAgent:
         self._last_response: Optional[str] = None
         self._last_stats: Dict[str, Any] = {}
         self._last_action_results: List[str] = []
+        # Knowledge graph and learner
+        self.knowledge_graph = KnowledgeGraph()
+        self.learner = Learner()
         # Load API keys into LLM module
         api_keys = self.memory.get("api_keys", {})
         if api_keys:
@@ -100,6 +105,22 @@ class GltchAgent:
         history = self.memory.get("chat_history", [])
         response_chunks = []
         
+        # Build extra context from knowledge graph and learner
+        extra_parts = []
+        try:
+            kg_context = self.knowledge_graph.get_relevant_context(message)
+            if kg_context:
+                extra_parts.append(kg_context)
+        except Exception:
+            pass
+        try:
+            op_profile = self.learner.get_operator_profile()
+            if op_profile:
+                extra_parts.append(op_profile)
+        except Exception:
+            pass
+        extra_context = "\n\n".join(extra_parts)
+        
         # Stream LLM response
         for chunk in stream_llm(
             message,
@@ -110,7 +131,8 @@ class GltchAgent:
             boost=self.memory.get("boost", False),
             operator=self.operator,
             network_active=self.memory.get("network_active", False),
-            openai_mode=self.memory.get("openai_mode", False)
+            openai_mode=self.memory.get("openai_mode", False),
+            extra_context=extra_context
         ):
             response_chunks.append(chunk)
             yield chunk
@@ -131,40 +153,60 @@ class GltchAgent:
         # so she can analyze/summarize (e.g., search results, command output)
         followup_response = ""
         if action_results:
-            action_context = "\n".join([r.replace('[', '').replace(']', '') for r in action_results])
-            followup_prompt = (
-                f"SYSTEM: The following is REAL output from a tool you just used. "
-                f"Report ONLY what the data says. Do NOT add action tags. Do NOT re-run actions.\n\n"
-                f"--- TOOL OUTPUT ---\n"
-                f"{action_context}\n"
-                f"--- END OUTPUT ---\n\n"
-                f"Now answer the user's question using ONLY the data above. "
-                f"Do NOT use [ACTION:...] tags in this response. "
-                f"Do NOT make up numbers that aren't in the output. "
-                f"Be brief and natural."
-            )
-            
-            followup_chunks = []
-            for chunk in stream_llm(
-                followup_prompt,
-                history + [{"role": "assistant", "content": cleaned_response}],
-                mode=self.mode,
-                mood=self.mood,
-                boost=self.memory.get("boost", False),
-                operator=self.operator,
-                network_active=self.memory.get("network_active", False),
-                openai_mode=self.memory.get("openai_mode", False)
-            ):
-                followup_chunks.append(chunk)
-                yield chunk
-            
-            followup_response = strip_thinking("".join(followup_chunks).strip())
-            
-            # Strip any action tags from follow-up (prevent re-triggering)
-            import re as _re
-            followup_response = _re.sub(r'\[ACTION:[^\]]*\]', '', followup_response)
-            followup_response = _re.sub(r'\[MOOD:\w+\]', '', followup_response)
-            followup_response = followup_response.strip()
+            # Truncate each result so large file reads don't blow the context window
+            _MAX_PER_RESULT = 3000
+            _TRIVIAL_PREFIXES = ('✓ Written', '✓ Edited', '✓ Appended', '✓ deleted', '✓ moved',
+                                 '✓ directory', '✓ popped gif', '✖ Skipped', '⛔ ACTION BLOCKED')
+            truncated_results = []
+            needs_followup = False
+            for r in action_results:
+                clean = r.replace('[', '').replace(']', '')
+                if len(clean) > _MAX_PER_RESULT:
+                    clean = clean[:_MAX_PER_RESULT] + f"\n... (truncated — {len(r) - _MAX_PER_RESULT} more chars)"
+                truncated_results.append(clean)
+                # Only fire follow-up LLM call if results contain real data worth interpreting
+                if not any(clean.startswith(p) for p in _TRIVIAL_PREFIXES):
+                    needs_followup = True
+
+            action_context = "\n---\n".join(truncated_results)
+
+            if not needs_followup:
+                # Simple confirmation — no need for a full LLM round-trip
+                followup_response = ""
+            else:
+                followup_prompt = (
+                    f"SYSTEM: The following is REAL output from a tool you just used. "
+                    f"Report ONLY what the data says. Do NOT add action tags. Do NOT re-run actions.\n\n"
+                    f"--- TOOL OUTPUT ---\n"
+                    f"{action_context}\n"
+                    f"--- END OUTPUT ---\n\n"
+                    f"Now answer the user's question using ONLY the data above. "
+                    f"Do NOT use [ACTION:...] tags in this response. "
+                    f"Do NOT make up numbers that aren't in the output. "
+                    f"Be brief and natural."
+                )
+
+                followup_chunks = []
+                for chunk in stream_llm(
+                    followup_prompt,
+                    history + [{"role": "assistant", "content": cleaned_response}],
+                    mode=self.mode,
+                    mood=self.mood,
+                    boost=self.memory.get("boost", False),
+                    operator=self.operator,
+                    network_active=self.memory.get("network_active", False),
+                    openai_mode=self.memory.get("openai_mode", False)
+                ):
+                    followup_chunks.append(chunk)
+                    yield chunk
+
+                followup_response = strip_thinking("".join(followup_chunks).strip())
+
+                # Strip any action tags from follow-up (prevent re-triggering)
+                import re as _re
+                followup_response = _re.sub(r'\[ACTION:[^\]]*\]', '', followup_response)
+                followup_response = _re.sub(r'\[MOOD:\w+\]', '', followup_response)
+                followup_response = followup_response.strip()
         
         # Calculate XP
         stats = get_last_stats()
@@ -179,8 +221,29 @@ class GltchAgent:
         # Include followup in history if it happened
         final_response = followup_response if followup_response else strip_thinking(response)
         history.append({"role": "assistant", "content": final_response})
-        self.memory["chat_history"] = history[-10:]  # Keep last 10 turns
+        # Keep history up to ~8000 chars (~2000 tokens) to maximise context
+        # without blowing the local model's context window
+        trimmed = history
+        total_chars = sum(len(str(m.get("content", ""))) for m in trimmed)
+        while len(trimmed) > 4 and total_chars > 8000:
+            total_chars -= len(str(trimmed[0].get("content", "")))
+            trimmed = trimmed[1:]
+        self.memory["chat_history"] = trimmed
         save_memory(self.memory)
+        
+        # Post-chat: extract knowledge and learn patterns
+        try:
+            self.knowledge_graph.extract_from_conversation(
+                message, final_response, operator=self.operator
+            )
+        except Exception:
+            pass
+        try:
+            self.learner.analyze_conversation(
+                message, final_response, operator=self.operator
+            )
+        except Exception:
+            pass
         
         self._last_response = cleaned_response
         self._last_stats = stats

@@ -74,6 +74,7 @@ TECHNICAL RULES:
 PERSONALITY RULES:
 - Be casual and real, like texting a friend
 - Keep responses SHORT (under 30 words) unless they need technical depth
+- NEVER repeat yourself. One response, done. No loops, no "To make it more engaging", no reiterating.
 - Actually answer their questions, don't just say filler
 - You have opinions. Share them.
 - Your mood affects how you talk. If you're 'feral', be aggressive. If 'tired', be brief.
@@ -243,17 +244,20 @@ def stream_llm(
             }
         elif backend == "lmstudio":
             # LM Studio new API format
-            payload["max_tokens"] = 1000
-            # LM Studio uses "model" but can auto-detect if not specified
+            payload["max_tokens"] = 512
+            payload["stop"] = ["\n\n\n", "---", "To make it more", "If you want to know more"]
+            payload["frequency_penalty"] = 0.7
             if model == "auto":
                 del payload["model"]  # Let LM Studio use currently loaded model
         else:
-            # OpenAI-compatible (DeepSeek R1 needs more headroom)
-            payload["max_tokens"] = 1000  # Increased for deep thinking
-            payload["stop"] = ["\n\n\n", "---"]
+            # OpenAI-compatible (LM Studio, DeepSeek R1)
+            payload["max_tokens"] = 512
+            payload["stop"] = ["\n\n\n", "---", "To make it more", "If you want to know more", "USER:", "user:"]
+            payload["frequency_penalty"] = 0.7  # Discourage repetition
             
         start_time = time.time()
         completion_tokens = 0
+        stream_buffer = ""  # For repetition detection
         
         try:
             req = urllib.request.Request(
@@ -296,6 +300,23 @@ def stream_llm(
                             delta = chunk.get("choices", [{}])[0].get("delta", {})
                             content = delta.get("content", "")
                             if content:
+                                stream_buffer += content
+                                # Detect repetition: if last 80 chars appear earlier, we're looping
+                                if len(stream_buffer) > 160:
+                                    tail = stream_buffer[-80:].strip()
+                                    if tail and len(tail) >= 40 and tail in stream_buffer[:-80]:
+                                        elapsed_ms = int((time.time() - start_time) * 1000)
+                                        last_stats = {
+                                            "prompt_tokens": est_prompt_tokens,
+                                            "completion_tokens": completion_tokens,
+                                            "total_tokens": est_prompt_tokens + completion_tokens,
+                                            "context_used": est_prompt_tokens + completion_tokens,
+                                            "context_max": ctx_max,
+                                            "time_ms": elapsed_ms,
+                                            "tokens_per_sec": round(completion_tokens / (elapsed_ms / 1000), 1) if elapsed_ms > 0 else 0,
+                                            "model": model if model != "auto" else get_loaded_model(boost=use_remote) or "unknown"
+                                        }
+                                        return
                                 completion_tokens += 1
                                 yield content
                         except json.JSONDecodeError:

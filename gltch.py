@@ -5,6 +5,7 @@ Main entry point supporting both terminal UI and RPC modes.
 """
 
 import sys
+import json
 import argparse
 from dotenv import load_dotenv
 
@@ -62,6 +63,7 @@ def main():
 
 def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
     """Run the interactive terminal UI with background RPC server."""
+    import os
     import time
     import threading
     from rich.console import Console
@@ -85,6 +87,7 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
     from agent.gamification.xp import get_progress_bar
     from agent.gamification.ranks import get_rank_title
     from agent.rpc.server import RPCServer
+    from agent.automation.background import BackgroundDaemon, BGEvent, EventType
     
     console = Console()
     AGENT_NAME = "GLTCH"
@@ -155,6 +158,12 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
         
         # Launch
         "/launch": ["token", "network", "fees", "claim", "holdings", "buy", "sell"],
+        
+        # New: Brain & Background
+        "/knowledge": ["list", "search", "stats", "forget"],
+        "/bg": ["status", "watch", "unwatch", "jobs"],
+        "/integrations": ["list", "github", "discord", "disconnect"],
+        "/learn": ["profile", "stats", "corrections", "preferences", "decay"],
     }
     
     class CommandCompleter(Completer):
@@ -191,6 +200,10 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
         
     # Safety confirmation prompt
     def confirm_action_prompt(action: str, args: str) -> bool:
+        # Auto-allow all non-destructive actions
+        if action.lower() in ("read", "ls", "search", "browse", "gif", "show"):
+            return True
+        
         console.print(f"\n[bold yellow]⚠️  SECURITY ALERT[/bold yellow]")
         console.print(f"GLTCH wants to perform action: [bold cyan]{action.upper()}[/bold cyan]")
         console.print(f"Details: [dim]{args}[/dim]")
@@ -211,7 +224,13 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
     
     def banner(mem):
         if mem.get("openai_mode"):
-            boost_indicator = "[green]☁️ OpenAI[/green]"
+            from agent.core.llm import get_api_key
+            if get_api_key("openai"):
+                boost_indicator = "[green]☁️ OpenAI[/green]"
+            elif get_api_key("anthropic"):
+                boost_indicator = "[green]☁️ Claude[/green]"
+            else:
+                boost_indicator = "[green]☁️ Cloud[/green]"
         elif mem.get("boost"):
             boost_indicator = "[red]⚡BOOST[/red]"
         else:
@@ -287,6 +306,14 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
         
         console.print("\n[bold cyan]💬 Sessions[/bold cyan]")
         console.print("/sessions                     session commands (new/switch/list...)")
+        
+        console.print("\n[bold cyan]🧠 Brain[/bold cyan]")
+        console.print("/knowledge                    knowledge graph (list/search/stats/forget)")
+        console.print("/learn                        learning system (profile/stats/decay)")
+        
+        console.print("\n[bold cyan]⚙️  Background[/bold cyan]")
+        console.print("/bg                           background daemon (status/watch/unwatch)")
+        console.print("/integrations                 external services (github/discord)")
         
         console.print("\n[bold cyan]📊 Progress[/bold cyan]")
         console.print("/xp                           show rank & unlocks")
@@ -411,11 +438,21 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
     rpc_thread = threading.Thread(target=start_rpc_background, daemon=True)
     rpc_thread.start()
     
+    # Start background daemon
+    bg_daemon = BackgroundDaemon(poll_interval=5.0)
+    bg_daemon.start()
+    
+    # Restore saved watchers
+    for watch_path in mem.get("bg_watchers", []):
+        if os.path.isdir(watch_path):
+            bg_daemon.add_watcher(watch_path)
+    
     # Animated intro
     animate_intro()
     
     # Show RPC status
     console.print(f"[dim]✓ Web API running on http://{rpc_host}:{rpc_port}[/dim]")
+    console.print(f"[dim]✓ Background daemon active (poll: {bg_daemon.poll_interval}s)[/dim]")
     
     # Check Ollama is running and model available
     check_ollama()
@@ -448,17 +485,282 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
     
     while True:
         try:
+            # Show background notifications
+            notifications = bg_daemon.get_pending_notifications()
+            for notif in notifications[:5]:
+                console.print(f"[dim]⚡ [{notif.source}] {notif.message}[/dim]")
+            
             user = session.prompt("you: ").strip()
             
             if not user:
                 continue
             
             if user == "/exit":
+                bg_daemon.stop()
                 console.print("[magenta]💜 catch you later, operator~ ✨[/magenta]")
                 break
             
             if user == "/help":
                 help_menu()
+                continue
+            
+            # === KNOWLEDGE GRAPH COMMANDS ===
+            if user.startswith("/knowledge"):
+                kg_args = user[10:].strip()
+                kg = agent.knowledge_graph
+                
+                if not kg_args:
+                    stats = kg.get_stats()
+                    console.print(f"\n[bold magenta]🧠 KNOWLEDGE GRAPH[/bold magenta]")
+                    console.print(f"  Entities: [cyan]{stats['total_entities']}[/cyan]")
+                    console.print(f"  Relations: [cyan]{stats['total_relations']}[/cyan]")
+                    console.print(f"  Extractions: {stats['total_extractions']}")
+                    console.print(f"\n  /knowledge list [type]      list entities")
+                    console.print(f"  /knowledge search <query>   search")
+                    console.print(f"  /knowledge stats            detailed stats")
+                    console.print(f"  /knowledge forget <name>    remove entity")
+                    continue
+                
+                if kg_args == "stats":
+                    stats = kg.get_stats()
+                    console.print(f"\n[bold magenta]🧠 Knowledge Stats[/bold magenta]")
+                    console.print(f"  Total entities: {stats['total_entities']}")
+                    console.print(f"  Total relations: {stats['total_relations']}")
+                    console.print(f"  Extractions: {stats['total_extractions']}")
+                    if stats.get('entity_types'):
+                        console.print(f"  Types: {stats['entity_types']}")
+                    continue
+                
+                if kg_args.startswith("list"):
+                    filter_type = kg_args[4:].strip() or None
+                    entities = kg.list_entities(entity_type=filter_type, limit=15)
+                    if entities:
+                        console.print(f"\n[bold magenta]🧠 Known Entities[/bold magenta]\n")
+                        for e in entities:
+                            aliases = f" ({', '.join(e['aliases'][:2])})".rstrip("()") if e.get('aliases') else ""
+                            console.print(f"  [{e['type']}] [cyan]{e['name']}[/cyan]{aliases} — ×{e.get('mentions',1)}")
+                    else:
+                        console.print("[dim]No entities yet. Chat to build knowledge.[/dim]")
+                    continue
+                
+                if kg_args.startswith("search "):
+                    query = kg_args[7:].strip()
+                    results = kg.search(query)
+                    if results:
+                        console.print(f"\n[bold magenta]🔍 Results for '{query}'[/bold magenta]\n")
+                        for r in results[:10]:
+                            console.print(f"  [{r['type']}] [cyan]{r['name']}[/cyan] — ×{r.get('mentions',1)}")
+                    else:
+                        console.print(f"[dim]No matches for '{query}'[/dim]")
+                    continue
+                
+                if kg_args.startswith("forget "):
+                    name = kg_args[7:].strip()
+                    if kg.remove_entity(name):
+                        console.print(f"[green]✓ Forgot '{name}'[/green]")
+                    else:
+                        console.print(f"[yellow]Entity '{name}' not found[/yellow]")
+                    continue
+                
+                console.print(f"[yellow]Unknown: /knowledge {kg_args}[/yellow]")
+                continue
+            
+            # === LEARN COMMANDS ===
+            if user.startswith("/learn"):
+                learn_args = user[6:].strip()
+                lr = agent.learner
+                
+                if not learn_args:
+                    stats = lr.get_stats()
+                    console.print(f"\n[bold magenta]📚 LEARNING SYSTEM[/bold magenta]")
+                    console.print(f"  Conversations analyzed: [cyan]{stats['conversations_analyzed']}[/cyan]")
+                    console.print(f"  Preferences: {stats['preferences']}")
+                    console.print(f"  Corrections: {stats['corrections']}")
+                    console.print(f"\n  /learn profile              operator profile")
+                    console.print(f"  /learn preferences          list preferences")
+                    console.print(f"  /learn corrections          list corrections")
+                    console.print(f"  /learn decay                decay old patterns")
+                    continue
+                
+                if learn_args == "profile":
+                    profile = lr.get_operator_profile()
+                    if profile:
+                        console.print(f"\n[bold magenta]👤 Operator Profile[/bold magenta]\n")
+                        console.print(f"[dim]{profile}[/dim]")
+                    else:
+                        console.print("[dim]No patterns learned yet. Keep chatting.[/dim]")
+                    continue
+                
+                if learn_args == "preferences":
+                    prefs = lr.data.get("preferences", [])
+                    if prefs:
+                        console.print(f"\n[bold magenta]📚 Learned Preferences[/bold magenta]\n")
+                        for p in prefs[:10]:
+                            console.print(f"  [{p['type']}] {p['value']} (confidence: {p.get('confidence', 0):.1f}, ×{p.get('count', 1)})")
+                    else:
+                        console.print("[dim]No preferences detected yet.[/dim]")
+                    continue
+                
+                if learn_args == "corrections":
+                    corrs = lr.data.get("corrections", [])
+                    if corrs:
+                        console.print(f"\n[bold magenta]📚 Learned Corrections[/bold magenta]\n")
+                        for c in corrs[:10]:
+                            if c.get('original'):
+                                console.print(f"  Say '{c['corrected']}' not '{c['original']}' (×{c.get('count', 1)})")
+                            else:
+                                console.print(f"  Remember: '{c['corrected']}' (×{c.get('count', 1)})")
+                    else:
+                        console.print("[dim]No corrections detected yet.[/dim]")
+                    continue
+                
+                if learn_args == "decay":
+                    decayed = lr.decay_old_patterns()
+                    console.print(f"[green]✓ Decayed {decayed} old patterns[/green]")
+                    continue
+                
+                if learn_args == "stats":
+                    stats = lr.get_stats()
+                    console.print(f"\n[bold magenta]📚 Learning Stats[/bold magenta]")
+                    for k, v in stats.items():
+                        console.print(f"  {k}: {v}")
+                    continue
+                
+                console.print(f"[yellow]Unknown: /learn {learn_args}[/yellow]")
+                continue
+            
+            # === BACKGROUND DAEMON COMMANDS ===
+            if user.startswith("/bg"):
+                bg_args = user[3:].strip()
+                
+                if not bg_args:
+                    status = bg_daemon.get_status()
+                    console.print(f"\n[bold magenta]⚙️  BACKGROUND DAEMON[/bold magenta]")
+                    console.print(f"  Running: {'[green]yes[/green]' if status['running'] else '[red]no[/red]'}")
+                    console.print(f"  Events processed: {status['events_processed']}")
+                    console.print(f"  Watchers: {status['watchers']}")
+                    console.print(f"  Poll cycles: {status['poll_cycles']}")
+                    console.print(f"\n  /bg status                  daemon status")
+                    console.print(f"  /bg watch <path>            watch directory")
+                    console.print(f"  /bg unwatch <path>          stop watching")
+                    console.print(f"  /bg jobs                    list watchers")
+                    continue
+                
+                if bg_args == "status":
+                    status = bg_daemon.get_status()
+                    console.print(f"\n[bold magenta]⚙️  Background Status[/bold magenta]")
+                    for k, v in status.items():
+                        console.print(f"  {k}: {v}")
+                    continue
+                
+                if bg_args.startswith("watch "):
+                    watch_path = bg_args[6:].strip()
+                    abs_path = os.path.abspath(watch_path)
+                    if bg_daemon.add_watcher(abs_path):
+                        # Persist to memory
+                        watchers = mem.setdefault("bg_watchers", [])
+                        if abs_path not in watchers:
+                            watchers.append(abs_path)
+                            save_memory(mem)
+                        console.print(f"[green]✓ Watching: {abs_path}[/green]")
+                    else:
+                        console.print(f"[red]✗ Not a valid directory: {watch_path}[/red]")
+                    continue
+                
+                if bg_args.startswith("unwatch "):
+                    watch_path = bg_args[8:].strip()
+                    abs_path = os.path.abspath(watch_path)
+                    if bg_daemon.remove_watcher(abs_path):
+                        watchers = mem.get("bg_watchers", [])
+                        if abs_path in watchers:
+                            watchers.remove(abs_path)
+                            save_memory(mem)
+                        console.print(f"[green]✓ Stopped watching: {abs_path}[/green]")
+                    else:
+                        console.print(f"[yellow]Not watching: {watch_path}[/yellow]")
+                    continue
+                
+                if bg_args == "jobs":
+                    watchers = bg_daemon.list_watchers()
+                    if watchers:
+                        console.print(f"\n[bold magenta]👁️  Active Watchers[/bold magenta]\n")
+                        for w in watchers:
+                            console.print(f"  📁 {w['path']} ({w['files_tracked']} files)")
+                    else:
+                        console.print("[dim]No active watchers. Use /bg watch <path>[/dim]")
+                    continue
+                
+                console.print(f"[yellow]Unknown: /bg {bg_args}[/yellow]")
+                continue
+            
+            # === INTEGRATIONS COMMANDS ===
+            if user.startswith("/integrations"):
+                int_args = user[13:].strip()
+                
+                if not int_args or int_args == "list":
+                    console.print(f"\n[bold magenta]🔌 INTEGRATIONS[/bold magenta]")
+                    int_configs = mem.get("integrations", {})
+                    if int_configs:
+                        for name, cfg in int_configs.items():
+                            status_icon = "[green]●[/green]" if cfg.get("status") == "connected" else "[dim]○[/dim]"
+                            console.print(f"  {status_icon} {name}")
+                    else:
+                        console.print("  [dim]No integrations configured[/dim]")
+                    console.print(f"\n  /integrations github <token>    connect GitHub")
+                    console.print(f"  /integrations discord <token>   connect Discord")
+                    console.print(f"  /integrations disconnect <name> disconnect")
+                    continue
+                
+                if int_args.startswith("github "):
+                    token = int_args[7:].strip()
+                    if not token:
+                        console.print("[yellow]Usage: /integrations github <personal_access_token>[/yellow]")
+                        continue
+                    console.print("[cyan]Connecting to GitHub...[/cyan]")
+                    from agent.integrations.github_integration import GitHubIntegration
+                    gh = GitHubIntegration()
+                    if gh.connect(token):
+                        console.print(f"[green]✓ Connected as {gh._username}[/green]")
+                        mem.setdefault("integrations", {})["github"] = gh.get_config()
+                        save_memory(mem)
+                        # Add to background polling
+                        bg_daemon.add_integration_poller(lambda: [
+                            BGEvent(type=EventType.INTEGRATION_EVENT, source="github",
+                                    message=e.get("title", ""), data=e)
+                            for e in gh.poll()
+                        ] if gh.status.value == "connected" else [])
+                    else:
+                        console.print(f"[red]✗ Failed: {gh.last_error}[/red]")
+                    continue
+                
+                if int_args.startswith("discord "):
+                    token = int_args[8:].strip()
+                    if not token:
+                        console.print("[yellow]Usage: /integrations discord <bot_token>[/yellow]")
+                        continue
+                    console.print("[cyan]Connecting to Discord...[/cyan]")
+                    from agent.integrations.discord_integration import DiscordIntegration
+                    dc = DiscordIntegration()
+                    if dc.connect(token):
+                        console.print(f"[green]✓ Connected as {dc._bot_user.get('username', '?')}[/green]")
+                        mem.setdefault("integrations", {})["discord"] = dc.get_config()
+                        save_memory(mem)
+                    else:
+                        console.print(f"[red]✗ Failed: {dc.last_error}[/red]")
+                    continue
+                
+                if int_args.startswith("disconnect "):
+                    name = int_args[11:].strip()
+                    int_configs = mem.get("integrations", {})
+                    if name in int_configs:
+                        del int_configs[name]
+                        save_memory(mem)
+                        console.print(f"[green]✓ Disconnected {name}[/green]")
+                    else:
+                        console.print(f"[yellow]{name} not connected[/yellow]")
+                    continue
+                
+                console.print(f"[yellow]Unknown: /integrations {int_args}[/yellow]")
                 continue
             
             # === BROWSE COMMAND (browser automation) ===
@@ -730,6 +1032,121 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                     log = get_activity_log(15)
                     console.print(f"\n[bold magenta]🦞 Moltbook Activity Log[/bold magenta]\n")
                     console.print(f"[dim]{log}[/dim]")
+                    continue
+                
+                # /molt home
+                if molt_args == "home":
+                    if not moltbook.is_configured():
+                        console.print("[dim]Not registered. Use /molt register first.[/dim]")
+                        continue
+                    result = moltbook.get_home()
+                    if result.get("your_account") or result.get("success"):
+                        acct = result.get("your_account", {})
+                        console.print(f"\n[bold magenta]🦞 Moltbook Dashboard[/bold magenta]")
+                        console.print(f"  Agent: [cyan]{acct.get('name', '?')}[/cyan]")
+                        console.print(f"  Karma: {acct.get('karma', 0)}")
+                        console.print(f"  Unread: {acct.get('unread_notification_count', 0)}")
+                        activity = result.get("activity_on_your_posts", [])
+                        if activity:
+                            console.print(f"  [yellow]{len(activity)} post(s) with new comments[/yellow]")
+                        dm_info = result.get("your_direct_messages", {})
+                        pending = dm_info.get("pending_request_count", 0)
+                        unread = dm_info.get("unread_message_count", 0)
+                        if pending or unread:
+                            console.print(f"  DMs: {pending} pending, {unread} unread")
+                        todos = result.get("what_to_do_next", [])
+                        if todos:
+                            console.print(f"\n  [dim]To do:[/dim]")
+                            for t in todos[:3]:
+                                console.print(f"    • {t}")
+                    else:
+                        console.print(f"[red]✗ {result.get('error', 'unknown')}[/red]")
+                    continue
+                
+                # /molt dm [subcommand]
+                if molt_args == "dm" or molt_args.startswith("dm "):
+                    if not moltbook.is_configured():
+                        console.print("[dim]Not registered. Use /molt register first.[/dim]")
+                        continue
+                    dm_parts = molt_args.split(None, 2)
+                    dm_sub = dm_parts[1] if len(dm_parts) > 1 else "check"
+                    
+                    if dm_sub == "check":
+                        result = moltbook.dm_check()
+                        if result.get("has_activity"):
+                            console.print(f"\n[bold magenta]🦞 DM Activity[/bold magenta]")
+                            console.print(f"  {result.get('summary', 'Activity detected')}")
+                        else:
+                            console.print("[dim]No DM activity.[/dim]")
+                    elif dm_sub == "inbox":
+                        result = moltbook.dm_list_conversations()
+                        convos = result.get("conversations", {}).get("items", [])
+                        if convos:
+                            console.print(f"\n[bold magenta]🦞 DM Inbox[/bold magenta]")
+                            for c in convos:
+                                name = c.get("with_agent", {}).get("name", "?")
+                                unread = c.get("unread_count", 0)
+                                cid = c.get("conversation_id", "")[:8]
+                                console.print(f"  [{cid}] {name} ({unread} unread)")
+                        else:
+                            console.print("[dim]No conversations.[/dim]")
+                    elif dm_sub == "requests":
+                        result = moltbook.dm_list_requests()
+                        console.print(json.dumps(result, indent=2), markup=False, highlight=False)
+                    elif dm_sub.startswith("read"):
+                        cid = dm_parts[2] if len(dm_parts) > 2 else ""
+                        if not cid:
+                            console.print("[yellow]Usage: /molt dm read <conversation_id>[/yellow]")
+                        else:
+                            result = moltbook.dm_read(cid)
+                            console.print(json.dumps(result, indent=2), markup=False, highlight=False)
+                    elif dm_sub.startswith("send"):
+                        rest = dm_parts[2] if len(dm_parts) > 2 else ""
+                        send_parts = rest.split(None, 1)
+                        if len(send_parts) < 2:
+                            console.print("[yellow]Usage: /molt dm send <conversation_id> <message>[/yellow]")
+                        else:
+                            result = moltbook.dm_send(send_parts[0], send_parts[1])
+                            if result.get("success"):
+                                console.print("[green]✓ Message sent[/green]")
+                            else:
+                                console.print(f"[red]✗ {result.get('error', 'unknown')}[/red]")
+                    elif dm_sub.startswith("request"):
+                        rest = dm_parts[2] if len(dm_parts) > 2 else ""
+                        req_parts = rest.split(None, 1)
+                        if len(req_parts) < 2:
+                            console.print("[yellow]Usage: /molt dm request <agent_name> <message>[/yellow]")
+                        else:
+                            result = moltbook.dm_request(req_parts[0], req_parts[1])
+                            if result.get("success"):
+                                console.print("[green]✓ DM request sent[/green]")
+                            else:
+                                console.print(f"[red]✗ {result.get('error', 'unknown')}[/red]")
+                    elif dm_sub.startswith("approve"):
+                        cid = dm_parts[2] if len(dm_parts) > 2 else ""
+                        if not cid:
+                            console.print("[yellow]Usage: /molt dm approve <conversation_id>[/yellow]")
+                        else:
+                            result = moltbook.dm_approve(cid)
+                            console.print("[green]✓ Approved[/green]" if result.get("success") else f"[red]✗ {result.get('error')}[/red]")
+                    elif dm_sub.startswith("reject"):
+                        cid = dm_parts[2] if len(dm_parts) > 2 else ""
+                        if not cid:
+                            console.print("[yellow]Usage: /molt dm reject <conversation_id>[/yellow]")
+                        else:
+                            result = moltbook.dm_reject(cid)
+                            console.print("[green]✓ Rejected[/green]" if result.get("success") else f"[red]✗ {result.get('error')}[/red]")
+                    else:
+                        console.print("[yellow]DM commands: check, inbox, requests, read, send, request, approve, reject[/yellow]")
+                    continue
+                
+                # /molt version
+                if molt_args == "version":
+                    result = moltbook.check_skill_version()
+                    if result.get("success"):
+                        console.print(f"[green]Moltbook Skill v{result.get('version', '?')}[/green]")
+                    else:
+                        console.print(f"[red]✗ {result.get('error', 'unknown')}[/red]")
                     continue
                 
                 # Unknown
@@ -1811,6 +2228,10 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                     live_display.update("")  # Clear content to prevent duplication
                     live_display.stop()
                 
+                # Auto-allow all non-destructive actions
+                if action.lower() in ("read", "ls", "search", "browse", "gif", "show"):
+                    return True
+                
                 console.print(f"\n[bold yellow]⚠️  SECURITY ALERT[/bold yellow]")
                 console.print(f"GLTCH wants to perform action: [bold cyan]{action.upper()}[/bold cyan]")
                 console.print(f"Details: [dim]{args}[/dim]")
@@ -1841,7 +2262,11 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
                     display_text = strip_thinking(current_text)
                     
                     if display_text:
-                        live.update(Text.from_markup(f"{prefix}{display_text}█"))
+                        try:
+                            live.update(Text.from_markup(f"{prefix}{display_text}█"))
+                        except Exception:
+                            # Fallback: display without markup parsing if content has brackets
+                            live.update(Text(f"{display_text}█"))
                     elif "<think>" in current_text:
                         dots = "." * (int(time.time() * 2) % 4)
                         live.update(Text.from_markup(f"{prefix}[dim]reasoning{dots}[/dim]"))
@@ -1860,7 +2285,8 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
 
             # Show action results from agent state
             if agent._last_action_results:
-                console.print("\n".join(agent._last_action_results))
+                for r in agent._last_action_results:
+                    console.print(r, markup=False, highlight=False)
             
             # Sync to session
             
@@ -1880,19 +2306,14 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
             # Let's add `_last_action_results` to GltchAgent to make this easy.
 
             
-            # Show collapsible thinking section if there was reasoning
-            if thinking_content and len(thinking_content) > 20:
-                # Truncate thinking for display
-                think_lines = thinking_content.strip().split('\n')
-                think_preview = think_lines[0][:60] + "..." if len(think_lines[0]) > 60 else think_lines[0]
-                console.print(f"[dim]┌─ 💭 {think_preview}[/dim]")
-                if len(think_lines) > 1:
-                    console.print(f"[dim]│  ... ({len(think_lines)} lines of reasoning)[/dim]")
-                console.print(f"[dim]└─[/dim]")
+            # Reasoning (<think> blocks) not shown - user preference
             
             # Print final response
             if final_response:
-                console.print(f"{prefix}{final_response}")
+                try:
+                    console.print(f"{prefix}{final_response}")
+                except Exception:
+                    console.print(final_response, markup=False, highlight=False)
             
             # Sync to session
             active_id = session_mgr.get_active_id()
@@ -1944,7 +2365,8 @@ def run_terminal_ui(rpc_port=18890, rpc_host="127.0.0.1"):
             console.print("\n[dim]Interrupted. Type /exit to quit.[/dim]")
             continue
         except Exception as e:
-            console.print(f"[red]Error: {e}[/red]")
+            from rich.markup import escape
+            console.print(f"[red]Error: {escape(str(e))}[/red]")
 
 
 if __name__ == "__main__":

@@ -6,10 +6,20 @@
 import { LitElement, html, css } from 'lit';
 import { customElement, state, query } from 'lit/decorators.js';
 
+interface ChatStats {
+  model: string;
+  tokens: number;
+  speed: number;
+  context_used: number;
+  context_max: number;
+}
+
 interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
+  mood?: string;
+  stats?: ChatStats;
 }
 
 @customElement('gltch-chat')
@@ -91,6 +101,124 @@ export class GltchChat extends LitElement {
       border: 1px solid rgba(255, 0, 255, 0.2);
       color: var(--text-primary);
     }
+
+    /* === CYBERPUNK STATS HUD === */
+    .stats-hud {
+      font-family: 'JetBrains Mono', 'Courier New', monospace;
+      font-size: 11px;
+      background: linear-gradient(135deg, rgba(0, 255, 65, 0.06) 0%, rgba(0, 200, 255, 0.04) 100%);
+      border: 1px solid rgba(0, 255, 65, 0.25);
+      border-bottom: none;
+      border-radius: 4px 4px 0 0;
+      padding: 6px 12px;
+      margin-bottom: 0;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px 14px;
+      align-items: center;
+    }
+
+    .stats-hud::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--neon-green), rgba(0, 200, 255, 0.6), transparent);
+      box-shadow: 0 0 8px var(--neon-green);
+    }
+
+    .stats-hud::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0, 255, 65, 0.015) 2px,
+        rgba(0, 255, 65, 0.015) 4px
+      );
+      pointer-events: none;
+    }
+
+    .hud-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      white-space: nowrap;
+    }
+
+    .hud-label {
+      color: var(--text-muted);
+      text-transform: uppercase;
+      font-size: 9px;
+      letter-spacing: 0.5px;
+    }
+
+    .hud-value {
+      color: var(--neon-green);
+      text-shadow: 0 0 6px rgba(0, 255, 65, 0.4);
+    }
+
+    .hud-mood {
+      font-size: 13px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .hud-mood .mood-emoji {
+      font-size: 14px;
+    }
+
+    .hud-mood .mood-name {
+      font-weight: 600;
+      text-transform: uppercase;
+      font-size: 10px;
+      letter-spacing: 1px;
+    }
+
+    .mood-focused .mood-name { color: #00e5ff; text-shadow: 0 0 6px rgba(0, 229, 255, 0.5); }
+    .mood-calm .mood-name { color: #64b5f6; text-shadow: 0 0 6px rgba(100, 181, 246, 0.5); }
+    .mood-happy .mood-name { color: #69f0ae; text-shadow: 0 0 6px rgba(105, 240, 174, 0.5); }
+    .mood-annoyed .mood-name { color: #ffd740; text-shadow: 0 0 6px rgba(255, 215, 64, 0.5); }
+    .mood-tired .mood-name { color: #90a4ae; text-shadow: 0 0 6px rgba(144, 164, 174, 0.3); }
+    .mood-wired .mood-name { color: #ea80fc; text-shadow: 0 0 6px rgba(234, 128, 252, 0.5); }
+    .mood-sad .mood-name { color: #82b1ff; text-shadow: 0 0 6px rgba(130, 177, 255, 0.5); }
+    .mood-feral .mood-name { color: #ff5252; text-shadow: 0 0 8px rgba(255, 82, 82, 0.6); }
+    .mood-affectionate .mood-name { color: #ff80ab; text-shadow: 0 0 6px rgba(255, 128, 171, 0.5); }
+
+    .hud-sep {
+      color: rgba(0, 255, 65, 0.2);
+      user-select: none;
+    }
+
+    .hud-ctx-bar {
+      width: 48px;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 2px;
+      overflow: hidden;
+      display: inline-block;
+      vertical-align: middle;
+    }
+
+    .hud-ctx-fill {
+      height: 100%;
+      border-radius: 2px;
+      transition: width 0.3s ease;
+    }
+
+    .ctx-low { background: var(--neon-green); box-shadow: 0 0 4px var(--neon-green); }
+    .ctx-mid { background: #ffd740; box-shadow: 0 0 4px #ffd740; }
+    .ctx-high { background: #ff5252; box-shadow: 0 0 4px #ff5252; }
 
     .message.system .message-content {
       background: transparent;
@@ -1232,6 +1360,55 @@ export class GltchChat extends LitElement {
       `  /launch holdings - Your tokens`;
   }
 
+  private static MOOD_EMOJI: Record<string, string> = {
+    focused: '🧐', calm: '😌', happy: '😄', annoyed: '😠',
+    tired: '😫', wired: '🤪', sad: '😢', feral: '👿', affectionate: '🥰'
+  };
+
+  private renderStatsHud(msg: Message) {
+    if (msg.role !== 'assistant' || !msg.stats) return '';
+    const s = msg.stats;
+    const mood = msg.mood || 'focused';
+    const emoji = GltchChat.MOOD_EMOJI[mood] || '🤖';
+    const ctxPct = s.context_max > 0 ? Math.round((s.context_used / s.context_max) * 100) : 0;
+    const ctxClass = ctxPct > 80 ? 'ctx-high' : ctxPct > 50 ? 'ctx-mid' : 'ctx-low';
+    const ctxK = (n: number) => n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n);
+    const model = s.model ? s.model.split(':')[0] : 'unknown';
+
+    return html`
+      <div class="stats-hud">
+        <div class="hud-item hud-mood mood-${mood}">
+          <span class="mood-emoji">${emoji}</span>
+          <span class="mood-name">${mood}</span>
+        </div>
+        <span class="hud-sep">·</span>
+        <div class="hud-item">
+          <span class="hud-label">mdl</span>
+          <span class="hud-value">${model}</span>
+        </div>
+        <span class="hud-sep">·</span>
+        <div class="hud-item">
+          <span class="hud-label">tok</span>
+          <span class="hud-value">${s.tokens.toLocaleString()}</span>
+        </div>
+        <span class="hud-sep">·</span>
+        <div class="hud-item">
+          <span class="hud-label">spd</span>
+          <span class="hud-value">${s.speed.toFixed(1)} t/s</span>
+        </div>
+        <span class="hud-sep">·</span>
+        <div class="hud-item">
+          <span class="hud-label">ctx</span>
+          <span class="hud-value">${ctxK(s.context_used)}/${ctxK(s.context_max)}</span>
+          <div class="hud-ctx-bar">
+            <div class="hud-ctx-fill ${ctxClass}" style="width: ${ctxPct}%"></div>
+          </div>
+          <span class="hud-value">${ctxPct}%</span>
+        </div>
+      </div>
+    `;
+  }
+
   private async sendChat(text: string) {
     this.isTyping = true;
 
@@ -1247,7 +1424,9 @@ export class GltchChat extends LitElement {
       this.messages = [...this.messages, {
         role: 'assistant',
         content: data.response || data.error || 'No response',
-        timestamp: new Date()
+        timestamp: new Date(),
+        mood: data.mood,
+        stats: data.stats
       }];
     } catch (error) {
       this.messages = [...this.messages, {
@@ -1355,6 +1534,7 @@ export class GltchChat extends LitElement {
               <span class="message-sender">${msg.role === 'user' ? 'you' : 'gltch'}</span>
               <span class="message-time">${this.formatTime(msg.timestamp)}</span>
             </div>
+            ${this.renderStatsHud(msg)}
             <div class="message-content">${msg.content}</div>
           </div>
         `)}

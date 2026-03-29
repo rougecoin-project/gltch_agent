@@ -1,0 +1,53 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0 -- C:\Users\brand\Documents\GitHub\glitch_agent\.venv\Scripts\python.exe
+cachedir: .pytest_cache
+rootdir: C:\Users\brand\Documents\GitHub\glitch_agent
+configfile: pyproject.toml
+plugins: asyncio-1.3.0, cov-7.0.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 42 items
+
+tests/test_knowledge_graph.py::test_add_entity PASSED                    [  2%]
+tests/test_knowledge_graph.py::test_add_entity_increments_mentions PASSED [  4%]
+tests/test_knowledge_graph.py::test_add_entity_with_aliases PASSED       [  7%]
+tests/test_knowledge_graph.py::test_get_entity PASSED                    [  9%]
+tests/test_knowledge_graph.py::test_remove_entity PASSED                 [ 11%]
+tests/test_knowledge_graph.py::test_add_relation PASSED                  [ 14%]
+tests/test_knowledge_graph.py::test_relation_weight_increment PASSED     [ 16%]
+tests/test_knowledge_graph.py::test_extract_from_conversation PASSED     [ 19%]
+tests/test_knowledge_graph.py::test_get_relevant_context PASSED          [ 21%]
+tests/test_knowledge_graph.py::test_empty_context PASSED                 [ 23%]
+tests/test_knowledge_graph.py::test_search PASSED                        [ 26%]
+tests/test_knowledge_graph.py::test_list_entities PASSED                 [ 28%]
+tests/test_knowledge_graph.py::test_merge_entities PASSED                [ 30%]
+tests/test_knowledge_graph.py::test_persistence PASSED                   [ 33%]
+tests/test_knowledge_graph.py::test_stats PASSED                         [ 35%]
+tests/test_learner.py::test_extract_corrections_dont_say PASSED          [ 38%]
+tests/test_learner.py::test_extract_corrections_use_not PASSED           [ 40%]
+tests/test_learner.py::test_extract_preferences_prefers PASSED           [ 42%]
+tests/test_learner.py::test_extract_preferences_dislikes PASSED          [ 45%]
+tests/test_learner.py::test_extract_preferences_favorite PASSED          [ 47%]
+tests/test_learner.py::test_analyze_conversation PASSED                  [ 50%]
+tests/test_learner.py::test_style_detection_casual PASSED                [ 52%]
+tests/test_learner.py::test_style_detection_formal PASSED                [ 54%]
+tests/test_learner.py::test_topic_tracking PASSED                        [ 57%]
+tests/test_learner.py::test_operator_profile_empty PASSED                [ 59%]
+tests/test_learner.py::test_operator_profile_with_data PASSED            [ 61%]
+tests/test_learner.py::test_preference_confidence_growth PASSED          [ 64%]
+tests/test_learner.py::test_decay_old_patterns PASSED                    [ 66%]
+tests/test_learner.py::test_persistence PASSED                           [ 69%]
+tests/test_learner.py::test_time_pattern_tracking PASSED                 [ 71%]
+tests/test_learner.py::test_stats PASSED                                 [ 73%]
+tests/test_background.py::test_daemon_start_stop PASSED                  [ 76%]
+tests/test_background.py::test_add_watcher PASSED                        [ 78%]
+tests/test_background.py::test_add_watcher_invalid_path PASSED           [ 80%]
+tests/test_background.py::test_remove_watcher PASSED                     [ 83%]
+tests/test_background.py::test_file_watcher_detect_creation PASSED       [ 85%]
+tests/test_background.py::test_file_watcher_detect_deletion PASSED       [ 88%]
+tests/test_background.py::test_file_watcher_detect_modification PASSED   [ 90%]
+tests/test_background.py::test_file_watcher_ignore_patterns PASSED       [ 92%]
+tests/test_background.py::test_event_queue PASSED                        [ 95%]
+tests/test_background.py::test_notification_buffer_cleared PASSED        [ 97%]
+tests/test_background.py::test_daemon_status PASSED                      [100%]
+
+============================= 42 passed in 3.76s ==============================

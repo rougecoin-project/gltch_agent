@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c \"from agent.tools.file_ops import file_edit, file_grep, file_glob; print\\(''imports OK''\\)\")"
+    ]
+  }
+}

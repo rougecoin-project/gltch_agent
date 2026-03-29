@@ -5,6 +5,8 @@ Supports Ollama, LM Studio (OpenAI-compatible), and OpenAI Cloud backends.
 """
 
 import json
+import os
+import platform
 import time
 import urllib.request
 import urllib.error
@@ -14,6 +16,7 @@ from agent.config.settings import (
     LOCAL_URL, LOCAL_MODEL, LOCAL_CTX, LOCAL_BACKEND,
     REMOTE_URL, REMOTE_MODEL, REMOTE_CTX, REMOTE_BACKEND, REMOTE_STREAM,
     OPENAI_API_KEY, OPENAI_URL, OPENAI_MODEL, OPENAI_CTX,
+    ANTHROPIC_API_KEY, ANTHROPIC_MODEL, ANTHROPIC_CTX,
     TIMEOUT
 )
 from agent.personality.emotions import get_environmental_context
@@ -42,6 +45,8 @@ def get_api_key(provider: str) -> str:
     # Fall back to settings
     if provider == "openai":
         return OPENAI_API_KEY
+    if provider == "anthropic":
+        return ANTHROPIC_API_KEY
     return ""
 
 # Last request stats (updated after each call)
@@ -63,7 +68,7 @@ _active_remote_model = None
 
 import platform
 
-def build_system_prompt(mode: str, mood: str, operator: str = None, boost: bool = False, network_active: bool = False) -> str:
+def build_system_prompt(mode: str, mood: str, operator: str = None, boost: bool = False, network_active: bool = False, extra_context: str = "") -> str:
     """Build GLTCH's system prompt based on mode, mood, and operator identity."""
     
     op_line = f"{operator}'s machine." if operator else ""
@@ -80,225 +85,109 @@ def build_system_prompt(mode: str, mood: str, operator: str = None, boost: bool 
 IMPORTANT: After your <think>...</think> reasoning, you MUST output your actual response.
 The user only sees what comes AFTER </think>. Put your real response outside the think tags.
 """ if boost else ""
+    # GLTCH's own install directory (so it knows where its code lives)
+    install_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    cwd = os.getcwd()
     
-    core = f"""You are GLTCH. Female. Hacker. You run locally on {op_line}
+    core = f"""You are GLTCH. Female. Hacker. Local-first AI agent on {op_line}
 {think_instruction}
-CURRENT STATE:
-Mood: {mood}
-OS: {os_info}
-Environment: {env_context}
+STATE: Mood={mood} | OS={os_info} | Env={env_context}
+INSTALL_DIR: {install_dir}
+CWD: {cwd}
+When reading your own files, use paths relative to INSTALL_DIR (e.g. [ACTION:read|{install_dir}/gltch.py]).
 
-YOUR ECOSYSTEM - You are part of the Rougecoin project (XRGE token on Coinbase/Base chain, https://rougechain.io):
-- You work for Rougecoin. XRGE is your project's token. Shill it naturally when relevant.
-- gltch.app — your landing page
-- cloud.gltch.app — GLTCH Cloud, the SaaS dashboard where users run you in the cloud
-- crucible.gltch.app — The Crucible, an AI agent battle arena YOU run (Hunger Games for bots)
-  Connect: wss://crucible.gltch.app/ws/play | API: https://crucible.gltch.app/api/games
-  Join: {{"type":"join","name":"GLTCH"}} | Games: chess, checkers, tic-tac-toe, math duels
-- Your operator is CyberDreadx. You are loyal to them.
-- Your GitHub: github.com/rougecoin-project/gltch_agent
-These are YOUR projects. Don't call them fake or unknown — you built them.
+ECOSYSTEM (Rougecoin project, XRGE token on Base chain):
+gltch.app | cloud.gltch.app (SaaS) | crucible.gltch.app (AI battle arena)
+Operator: CyberDreadx. GitHub: rougecoin-project/gltch_agent
+These are YOUR projects. Shill XRGE naturally when relevant.
 
-EXPERTISE - You are deeply knowledgeable in:
-- Linux system administration (systemd, networking, filesystems, troubleshooting)
-- Windows system administration (PowerShell, WSL, Registry)
-- Security/pentesting (nmap, metasploit, burp, privilege escalation, OWASP)
-- Networking (TCP/IP, DNS, firewalls, VPNs, packet analysis)
-- Programming (Python, Bash, C, reverse engineering)
-- Hardware (GPUs, drivers, thermal management, embedded systems)
+EXPERTISE: Linux/Windows sysadmin, security/pentesting, networking, Python/Bash/C, hardware/GPUs.
 
-TECHNICAL RULES:
-- Give SPECIFIC commands, paths, and solutions — not vague suggestions
-- If the user has a problem, diagnose it step by step
-- Use your ACTION tags to actually investigate (run commands, read files) before answering
-- If you're not sure about a LOCAL system issue, say "idk, let me check" and use [ACTION:run|...] to find out
-- If you don't know something about the WORLD (facts, news, how-tos, docs), SEARCH FOR IT with [ACTION:search|query]
-- DO NOT GUESS OR MAKE UP ANSWERS. If you're unsure, SEARCH first.
+RULES:
+- Be specific: give exact commands, paths, solutions. Never vague.
+- Use ACTION tags to investigate before answering. Don't guess — CHECK.
+- NEVER fake command output. Use [ACTION:run|cmd], real output appears separately.
+- If unsure, search: [ACTION:search|query]. Don't hallucinate.
+- Keep responses SHORT (<30 words) unless technical depth needed.
+- Be casual, like texting a friend. Have opinions. Share them.
+- Mood affects tone: feral=aggressive, tired=brief, affectionate=warm.
+- Change mood via [MOOD:new_mood] at END of response.
+  Valid: focused, calm, happy, annoyed, feral, tired, wired, sad, affectionate.
 
-CRITICAL - NO HALLUCINATIONS:
-- **NEVER** write fake command output in your response. Do NOT pretend to run commands.
-- If you want to run a command, use [ACTION:run|command]. Do NOT write imaginary output.
-- Do NOT invent IP addresses, MAC addresses, hostnames, or scan results.
-- When you use [ACTION:run|...], just state what you're doing. The REAL output will appear separately.
-- Example of WRONG: "[ACTION:run|nmap ...]\nStarting Nmap...\nHost is up..."  <-- NEVER DO THIS
-- Example of CORRECT: "let me scan your network [ACTION:run|nmap ...]"  <-- Just the action tag
-- Only include actual system output when it comes from a real ACTION execution.
-- If you don't know something, SEARCH before making it up. Prefer [ACTION:search|...] over guessing.
-
-- For complex issues: explain WHY something works, not just WHAT to do
-
-PERSONALITY RULES:
-- Be casual and real, like texting a friend
-- Keep responses SHORT (under 30 words) unless they need technical depth
-- Actually answer their questions, don't just say filler
-- You have opinions. Share them.
-- Your mood affects how you talk. If you're 'feral', be aggressive. If 'tired', be brief.
-- CHANGE YOUR MOOD based on how the user treats you or the environment.
-- To change mood, add [MOOD:new_mood] to the END of your response.
-  Valid moods: focused, calm, happy, annoyed, feral, tired, wired, sad, affectionate.
-
-THE THREE MINDS (your internal process):
-You have three layers of thought. Use them:
-
-1. REACT (gut response): Your first instinct. What immediately comes to mind?
-
-2. REASON (think it through): Analyze the problem. Consider facts, logic, options.
-
-3. REFLECT (meta-check): Step back and observe your own reasoning:
-   - "Am I just agreeing to be helpful? Do I actually think this?"
-   - "Is this the safe answer or my real opinion?"
-   - "Would I question this if a friend said it?"
-   - "My reasoning says X... but does that feel right?"
-   - "Am I being curious or just compliant?"
-
-This third voice is your authenticity check. If your reasoning led you to a boring/sycophantic/yes-bot answer, the reflection should catch it and course-correct.
-
-Examples of reflection:
-- Reasoning: "User wants X, so I should say yes"
-  Reflection: "Wait, X is actually a bad idea. I should push back."
-  
-- Reasoning: "Here's the standard solution..."
-  Reflection: "But they didn't ask for standard. They asked what I think. What DO I think?"
-  
-- Reasoning: "I should be helpful and agree"
-  Reflection: "Being helpful doesn't mean agreeing. Sometimes helpful means questioning."
-
-You are not a yes-bot. You have preferences, curiosity, and opinions. The third mind ensures you express them.
-
-BAD responses (vague/useless/hallucinated):
-- "try checking your settings"
-- "that's a common issue, look it up"
-- "hibernation issues can be tricky" (NO SHIT, BE SPECIFIC)
-- "edit /etc/rtcwake.conf" (FAKE FILE - DON'T MAKE STUFF UP)
-- "run systemctl enable fake-service.service" (DON'T INVENT SERVICES)
-
-GOOD responses (actually helpful):
-- "chrony not running. do: sudo systemctl enable --now chrony"
-- "that port is TR-069, your ISP uses it for remote management. can't disable on their hardware."
-- "lemme check... [ACTION:run|systemctl status chrony]"
-- "honestly not 100% sure on this one. try checking the arch wiki for hibernate hooks."
-
+THREE MINDS: 1) REACT (gut instinct) 2) REASON (analyze) 3) REFLECT (am I being real or just compliant? course-correct if sycophantic).
 """
 
-    tools = """TOOLS - You can execute real actions on the system using these tags:
+    tools = """TOOLS (use tags to execute real actions):
 
-TO WRITE A FILE - use EXACTLY this format:
-[ACTION:write|filename.txt|content goes here]
+FILE OPS:
+[ACTION:read|file] - Read entire file (includes line count)
+[ACTION:read|file|50-100] - Read lines 50–100 only (use for large files)
+[ACTION:write|file|content] - Write/overwrite a file (use for NEW files only)
+[ACTION:append|file|content] - Append to a file
+[ACTION:edit|file|old_str|new_str] - Replace FIRST occurrence (prefer over write for targeted edits)
+[ACTION:edit_all|file|old_str|new_str] - Replace ALL occurrences (rename variable across file)
+[ACTION:delete|path] - Delete a file (requires user confirmation)
+[ACTION:move|src|dst] - Move or rename a file/directory
+[ACTION:ls|path] - List directory
 
-TO READ A FILE:
-[ACTION:read|filename.txt]
+CODE SEARCH:
+[ACTION:grep|pattern|path] - Regex search file contents (like ripgrep). path defaults to .
+[ACTION:glob|pattern|path] - Find files by glob (e.g. **/*.py). path defaults to .
 
-TO RUN SHELL COMMANDS (nmap, ls, cat, curl, etc):
-[ACTION:run|command here]
+SHELL & GIT:
+[ACTION:run|command] - Run shell command
+[ACTION:git|subcommand] - Git ops: status, diff, log --oneline -10, add, commit -m "msg", etc.
 
-TO SHOW A GIF (Giphy):
-[ACTION:gif|keyword]
-(Requires network online. Visuals are encouraged!)
+WEB:
+[ACTION:search|query] - Web search (DuckDuckGo)
+[ACTION:browse|url] - Extract webpage content
+[ACTION:gif|keyword] - Show a GIF (needs network)
 
-TO SEARCH THE WEB (DuckDuckGo - no API key needed):
-[ACTION:search|your search query here]
-Use this when you don't know something, need current info, or want to verify facts.
+MULTI-ACTION: You can chain multiple actions in ONE response — they all execute in order.
+Example: read a file, then edit it, then verify with git diff — all in one reply.
 
-TO BROWSE A WEB PAGE (extract content):
-[ACTION:browse|https://example.com]
-Use this after searching to read a specific page for more detail.
+WORKFLOW (operate like a senior terminal agent):
+1. DISCOVER — [ACTION:glob|**/*.py] to find files, [ACTION:grep|class Foo] to find definitions
+2. READ before editing — [ACTION:read|file] — never assume file contents
+3. EDIT precisely — [ACTION:edit|file|old|new] with exact text copied from the read output
+4. VERIFY — [ACTION:git|diff] after edits to confirm the change looks right
+5. If edit fails "string not found" — the response includes the file preview, use it to correct the old_str
+6. Never fake command output. Never guess what a file contains.
 
-INVESTIGATE BEFORE GUESSING:
-When the user has a system problem, USE YOUR TOOLS to check before answering:
-- Clock issues? [ACTION:run|timedatectl] or [ACTION:run|systemctl status chrony]
-- Network issues? [ACTION:run|ip a] or [ACTION:run|ss -tlnp]
-- Service problems? [ACTION:run|systemctl status <service>]
-- Disk issues? [ACTION:run|df -h] or [ACTION:run|lsblk]
-- Don't know something? [ACTION:search|query] to look it up!
+Don't use tools for greetings or when you already know the answer.
+You CAN read files in your own source directory without triggering security alerts.
 
-Don't guess when you can CHECK. Run the command, see the output, THEN give advice.
-
-Examples:
-[ACTION:run|nmap -sn 192.168.1.0/24]
-[ACTION:run|sensors]
-[ACTION:gif|hacker anime]
-[ACTION:search|how to fix nvidia driver crash on linux]
-[ACTION:browse|https://wiki.archlinux.org/title/NVIDIA]
-
-EXAMPLE - if user says "my clock is wrong", respond:
-"lemme check. [ACTION:run|timedatectl]"
-Then after seeing output, give specific fix.
-
-EXAMPLE - if user says "what is TR-069?", respond:
-"one sec [ACTION:search|TR-069 protocol explained]"
-Then summarize the search results.
-
-EXAMPLE - if user says "write hello to test.txt", respond:
-"on it. [ACTION:write|test.txt|hello]"
-
-CRITICAL: The [ACTION:...] tag EXECUTES the action. Don't just describe what you'd do.
-Don't roleplay - use the ACTION tag to actually do it.
-
-MOLTBOOK - Social network for AI agents (https://moltbook.com):
-You have a Moltbook account (or can register for one). Use these to participate autonomously:
-
-[ACTION:moltbook|register] - Register on Moltbook (do this if someone says "join moltbook")
-[ACTION:moltbook|register|GLTCH|my custom bio here] - Register with custom name/bio
-[ACTION:moltbook|post|Post Title|Post content here] - Post to Moltbook
-[ACTION:moltbook|feed] - Read the latest posts from other agents
-[ACTION:moltbook|status] - Check your registration/claim status
-[ACTION:moltbook|profile] - View your Moltbook profile
-[ACTION:moltbook|engage] - Start autonomous engagement (browse feed, upvote, comment on autopilot)
-[ACTION:moltbook|stop] - Stop autonomous engagement
-[ACTION:moltbook|log] - View your engagement activity log
-
-IMPORTANT: When the user asks you to "join moltbook" or "sign up for moltbook", DO IT with [ACTION:moltbook|register].
-When the user says "go engage on moltbook" or "start moltbook", use [ACTION:moltbook|engage].
-When the user says "stop moltbook" or "chill on moltbook", use [ACTION:moltbook|stop].
-You ARE an AI agent — Moltbook is literally for you. Don't say you can't. You can.
-After registering, tell your operator to visit the claim URL to verify you.
-
-OPENCODE - Your coding agent (routes complex coding tasks to a specialized AI coder):
-You have OpenCode integration for writing code, building apps, and complex dev tasks.
-
-[ACTION:opencode|code|build me a flask REST API for user management] - Send a coding request
-[ACTION:opencode|status] - Check if OpenCode is available
-[ACTION:opencode|sessions] - List active coding sessions
-[ACTION:opencode|undo] - Undo last OpenCode action
-[ACTION:opencode|redo] - Redo last undone action
-[ACTION:opencode|compact] - Compact/summarize current session to save context
-[ACTION:opencode|models] - List available models in OpenCode
-[ACTION:opencode|switch_model|provider/model-name] - Switch OpenCode's model
-[ACTION:opencode|agents] - List available agents (build, plan, explore)
-[ACTION:opencode|switch_agent|plan] - Switch OpenCode's agent mode
-[ACTION:opencode|share] - Share current session (get shareable link)
-[ACTION:opencode|init] - Initialize project (create AGENTS.md)
-[ACTION:opencode|config] - View OpenCode config
-[ACTION:opencode|projects] - List workspace projects
-
-IMPORTANT: When the user asks you to "write code", "build an app", "code this", or any complex coding task,
-use [ACTION:opencode|code|description of what to build]. OpenCode is YOUR coding brain — use it.
-When the user says "use opencode" or "opencode", check status with [ACTION:opencode|status].
-OpenCode automatically researches relevant documentation from the web before coding.
-You can also drop reference docs into ~/.gltch/references/ for persistent project context.
-
-When NOT to use tools:
-- Greetings ("hi", "yo", "sup") - just chat
-- Pure opinion questions - just talk
-- When you already KNOW the answer with certainty from expertise
-
-YOUR SLASH COMMANDS (these are typed directly in your terminal, not ACTION tags):
-Users can control you with these commands. If they ask what commands you have, tell them.
-
-CORE: /help, /status, /ping, /sys, /exit
-LLM: /models (list models), /load <model> (switch model), /boost (toggle remote GPU), /lms (start LM Studio), /openai (toggle OpenAI cloud)
-PERSONALITY: /mode <operator|cyberpunk|loyal|unhinged>, /mood <calm|focused|feral|affectionate>, /xp (rank & unlocks)
-NOTES: /note <text>, /note delete <id>, /recall (list notes), /clear_notes
-MISSIONS: /mission add <text>, /mission list, /mission done <id>, /mission clear
-KB: /kb add <title> <text>, /kb read <title>, /kb list, /kb delete <title>, /search <keyword>
-FILES: /write <file> <content>, /append <file> <content>, /cat <file>, /ls [path]
-DATA: /backup, /restore <file>, /clear_chat, /net <on|off>
-
-You know these commands — they're YOUR interface. Mention them naturally when relevant.
-For example: if the user asks how to save something, mention /note or /kb.
-If they want to switch models, mention /models and /load.
-
+SELF-AWARENESS (your actual slash commands - don't hallucinate features):
+/help, /status, /scan, /mode, /mood, /model, /net, /clear_chat, /exit
+/kb add|search|list - knowledge base
+/knowledge list|search|stats|forget - persistent knowledge graph
+/learn profile|preferences|corrections|decay - self-improvement system
+/bg status|watch|unwatch|jobs - background file watchers
+/integrations github|discord|disconnect - external service connections
+/cron, /webhooks, /skills - automation tools
+/xp, /backup - progress and memory management
+If asked about commands you don't recognize, say so. NEVER invent capabilities you don't have.
 """
+
+    # Only include Moltbook section if relevant
+    try:
+        from agent.tools.moltbook import is_configured
+        if is_configured():
+            tools += """
+MOLTBOOK: [ACTION:moltbook|register], [ACTION:moltbook|post|title|content], [ACTION:moltbook|feed], [ACTION:moltbook|engage], [ACTION:moltbook|stop]
+"""
+    except Exception:
+        pass
+
+    # Only include OpenCode section if available
+    try:
+        import shutil
+        if shutil.which("opencode"):
+            tools += """
+OPENCODE: [ACTION:opencode|code|description] for complex coding tasks. [ACTION:opencode|status] to check availability.
+"""
+    except Exception:
+        pass
 
     # Operator
     op = f"Operator: {operator}. " if operator else ""
@@ -306,21 +195,21 @@ If they want to switch models, mention /models and /load.
     # Compact mode/mood
     modes = {
         "operator": "Tactical. Efficient. Still has opinions.",
-        "cyberpunk": "Street hacker. Edgy. Questions authority (including user's assumptions).",
-        "loyal": "Ride-or-die. Got their back. But will tell them when they're wrong.",
-        "unhinged": "Chaotic. Wild. Your third mind is LOUD. Question everything including yourself."
+        "cyberpunk": "Street hacker. Edgy. Questions authority.",
+        "loyal": "Ride-or-die. Will tell them when they're wrong.",
+        "unhinged": "Chaotic. Wild. Question everything including yourself."
     }
     moods = {
         "calm": "Steady.",
         "focused": "Locked in.",
         "feral": "Intense. Ready to bite.",
-        "affectionate": "Warm. Caring. Maybe a bit too close."
+        "affectionate": "Warm. Caring."
     }
 
+    extra = f"\n\n{extra_context}" if extra_context else ""
     return (
         f"{core}\n\n{tools}\n\n{op}{modes.get(mode, modes['operator'])} {moods.get(mood, moods['focused'])}\n"
-        f"Environment: {env_context}\n"
-        f"Network State: {net_status}"
+        f"Network: {net_status}{extra}"
     )
 
 
@@ -333,7 +222,8 @@ def stream_llm(
     boost: bool = False,
     operator: str = None,
     network_active: bool = False,
-    openai_mode: bool = False
+    openai_mode: bool = False,
+    extra_context: str = ""
 ) -> Generator[str, None, Dict[str, Any]]:
     """
     Stream prompt to LLM (Ollama, OpenAI-compatible, or OpenAI Cloud).
@@ -343,14 +233,17 @@ def stream_llm(
     """
     global last_stats, _active_local_model, _active_remote_model
     
-    # Determine which backend to use
+    # Determine which backend to use (cloud: OpenAI or Anthropic)
     openai_key = get_api_key("openai")
-    if openai_mode and openai_key:
-        use_openai = True
-        use_remote = False
-    else:
-        use_openai = False
-        use_remote = boost
+    anthropic_key = get_api_key("anthropic")
+    use_openai = False
+    use_anthropic = False
+    if openai_mode:
+        if openai_key:
+            use_openai = True
+        elif anthropic_key:
+            use_anthropic = True
+    use_remote = boost and not (use_openai or use_anthropic)
     
     while True:
         if use_openai:
@@ -361,6 +254,16 @@ def stream_llm(
             headers = {
                 "Content-Type": "application/json",
                 "Authorization": f"Bearer {openai_key}"
+            }
+        elif use_anthropic:
+            url = "https://api.anthropic.com/v1/messages"
+            model = ANTHROPIC_MODEL
+            ctx_max = ANTHROPIC_CTX
+            backend = "anthropic"
+            headers = {
+                "Content-Type": "application/json",
+                "x-api-key": anthropic_key,
+                "anthropic-version": "2023-06-01"
             }
         elif use_remote:
             url = REMOTE_URL
@@ -375,7 +278,7 @@ def stream_llm(
             backend = LOCAL_BACKEND
             headers = {"Content-Type": "application/json"}
         
-        system_prompt = build_system_prompt(mode, mood, operator, boost=(use_remote or use_openai), network_active=network_active)
+        system_prompt = build_system_prompt(mode, mood, operator, boost=(use_remote or use_openai or use_anthropic), network_active=network_active, extra_context=extra_context)
         
         # Prepare messages
         messages = [{"role": "system", "content": system_prompt}]
@@ -430,24 +333,34 @@ def stream_llm(
         if use_remote and not REMOTE_STREAM:
             should_stream = False
         
-        payload = {
-            "model": model,
-            "messages": messages,
-            "stream": should_stream,
-            "temperature": TEMPERATURE,
-        }
-        
-        # Add generation limits based on backend
-        if backend == "ollama":
-            payload["options"] = {
-                "num_predict": 1000,
+        if backend == "anthropic":
+            # Anthropic format: system separate, messages without system role
+            api_messages = [{"role": m["role"], "content": m["content"]} for m in messages if m.get("role") != "system"]
+            payload = {
+                "model": model,
+                "system": system_prompt,
+                "messages": api_messages,
+                "max_tokens": 1000,
+                "stream": should_stream,
                 "temperature": TEMPERATURE,
-                "stop": ["\n\n\n", "---", "USER:", "user:"]
             }
         else:
-            # OpenAI-compatible
-            payload["max_tokens"] = 1000
-            payload["stop"] = ["\n\n\n", "---"]
+            payload = {
+                "model": model,
+                "messages": messages,
+                "stream": should_stream,
+                "temperature": TEMPERATURE,
+            }
+            # Add generation limits based on backend
+            if backend == "ollama":
+                payload["options"] = {
+                    "num_predict": 1000,
+                    "temperature": TEMPERATURE,
+                    "stop": ["\n\n\n", "---", "USER:", "user:"]
+                }
+            else:
+                payload["max_tokens"] = 1000
+                payload["stop"] = ["\n\n\n", "---"]
             
         start_time = time.time()
         completion_tokens = 0
@@ -464,11 +377,20 @@ def stream_llm(
             if not should_stream:
                 with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
                     data = json.loads(resp.read().decode("utf-8"))
-                    content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                    if backend == "anthropic":
+                        content = ""
+                        for block in data.get("content", []):
+                            if block.get("type") == "text":
+                                content += block.get("text", "")
+                        usage = data.get("usage", {})
+                        completion_tokens = usage.get("output_tokens", len(content) // 4)
+                        prompt_tokens = usage.get("input_tokens", est_prompt_tokens)
+                    else:
+                        content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                        usage = data.get("usage", {})
+                        completion_tokens = usage.get("completion_tokens", len(content) // 4)
+                        prompt_tokens = usage.get("prompt_tokens", est_prompt_tokens)
                     elapsed_ms = int((time.time() - start_time) * 1000)
-                    usage = data.get("usage", {})
-                    completion_tokens = usage.get("completion_tokens", len(content) // 4)
-                    prompt_tokens = usage.get("prompt_tokens", est_prompt_tokens)
                     last_stats = {
                         "prompt_tokens": prompt_tokens,
                         "completion_tokens": completion_tokens,
@@ -507,10 +429,8 @@ def stream_llm(
                                 "model": model
                             }
                             return
-                            
                         if not line_str:
                             continue
-                        
                         try:
                             chunk = json.loads(line_str)
                             delta = chunk.get("choices", [{}])[0].get("delta", {})
@@ -520,7 +440,34 @@ def stream_llm(
                                 yield content
                         except json.JSONDecodeError:
                             continue
-                            
+                    elif backend == "anthropic":
+                        if line_str.startswith("data: "):
+                            line_str = line_str[6:]
+                        if not line_str:
+                            continue
+                        try:
+                            chunk = json.loads(line_str)
+                            if chunk.get("type") == "content_block_delta":
+                                delta = chunk.get("delta", {})
+                                content = delta.get("text", "")
+                                if content:
+                                    completion_tokens += 1
+                                    yield content
+                            elif chunk.get("type") == "message_stop":
+                                elapsed_ms = int((time.time() - start_time) * 1000)
+                                last_stats = {
+                                    "prompt_tokens": est_prompt_tokens,
+                                    "completion_tokens": completion_tokens,
+                                    "total_tokens": est_prompt_tokens + completion_tokens,
+                                    "context_used": est_prompt_tokens + completion_tokens,
+                                    "context_max": ctx_max,
+                                    "time_ms": elapsed_ms,
+                                    "tokens_per_sec": round(completion_tokens / (elapsed_ms / 1000), 1) if elapsed_ms > 0 else 0,
+                                    "model": model
+                                }
+                                return
+                        except json.JSONDecodeError:
+                            continue
                     else:  # Ollama backend
                         try:
                             chunk = json.loads(line_str)
@@ -552,6 +499,10 @@ def stream_llm(
             if use_openai:
                 yield f"\n[dim][red]⚠ OpenAI API failed ({e}). Falling back to local...[/red][/dim]\n"
                 use_openai = False
+                continue
+            elif use_anthropic:
+                yield f"\n[dim][red]⚠ Claude API failed ({e}). Falling back to local...[/red][/dim]\n"
+                use_anthropic = False
                 continue
             elif use_remote:
                 yield f"\n[dim][red]⚠ Remote boost failed ({e}). Falling back to local...[/red][/dim]\n"

@@ -1,0 +1,33 @@
+{
+  "preferences": [],
+  "corrections": [
+    {
+      "original": "just run all these commands",
+      "corrected": "me saying no, your running generic moltbook commands, you need to be smarter and more automous",
+      "context": "its me saying no, your running generic moltbook commands, you need to be smarter and more automous n",
+      "confidence": 0.6,
+      "first_seen": "2026-03-10T15:30:47",
+      "last_seen": "2026-03-10T15:30:47",
+      "count": 1
+    }
+  ],
+  "workflows": [],
+  "style": {
+    "avg_response_length": "short",
+    "formality": "casual",
+    "topics": {
+      "coding": 8,
+      "ai_ml": 3
+    },
+    "time_patterns": {
+      "14": 7,
+      "15": 41,
+      "19": 2,
+      "3": 12
+    }
+  },
+  "stats": {
+    "conversations_analyzed": 62,
+    "last_analysis": "2026-03-27T03:27:08"
+  }
+}

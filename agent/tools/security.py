@@ -85,12 +85,12 @@ class SecurityGuard:
         if action == "run":
             return SecurityGuard.is_safe_command(args)
             
-        if action in ("write", "append"):
+        if action in ("write", "append", "edit", "edit_all", "delete"):
             # Extract path from args "path|content" or "path\ncontent"
             if "|" in args:
                 path = args.split("|", 1)[0].strip()
             else:
                 path = args.split("\n", 1)[0].strip()
             return SecurityGuard.is_safe_path(path)
-            
+
         return True, "Safe"
